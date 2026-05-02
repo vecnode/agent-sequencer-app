@@ -1,8 +1,10 @@
 # sequence-orchestrator
 
-Sequence orcestrator, under development. 
+Under development. 
 
-### Reproduce
+
+
+## Reproduce (Host)
 
 ```sh
 # Windows
@@ -15,6 +17,12 @@ uv pip install -r requirements.txt
 # 2. Run the platform
 uv pip install -e .
 uv run python -m comms_platform.main
+```
+
+## Docker (Windows)
+
+```sh
+future
 ```
 
 ## Testing
