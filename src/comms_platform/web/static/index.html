@@ -16,26 +16,41 @@
       <span class="dot" id="dot"></span>
       <span id="conn-label">connecting</span>
     </span>
-    <div class="spacer"></div>
-    <div class="stat">OSC target <span id="stat-target">—</span></div>
-    <div class="stat">messages <span id="stat-count">0</span></div>
-    <div class="stat">clients <span id="stat-clients">—</span></div>
   </header>
 
   <main>
-    <div class="toolbar">
-      <span>OSC stream</span>
-      <div class="spacer"></div>
-      <button id="btn-clear">clear</button>
-      <button id="btn-pause">pause</button>
-    </div>
-
-    <div id="feed">
-      <div id="empty">
-        <div class="icon">◎</div>
-        <div>Waiting for OSC messages…</div>
+    <section class="panel panel-stream">
+      <div class="toolbar panel-header">
+        <span>OSC stream</span>
+        <div class="spacer"></div>
+        <button id="btn-clear">clear</button>
+        <button id="btn-pause">pause</button>
       </div>
-    </div>
+
+      <div class="panel-subheader panel-stream-stats">
+        <div class="stat">OSC IN: <span id="stat-osc-in">—</span></div>
+        <div class="stat">OSC OUT: <span id="stat-osc-out">—</span></div>
+        <div class="stat">messages <span id="stat-count">0</span></div>
+        <div class="stat">clients <span id="stat-clients">—</span></div>
+      </div>
+
+      <div id="feed" class="panel-body">
+        <div id="empty">
+          <div class="icon">◎</div>
+          <div>Waiting for OSC messages…</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Placeholder 01</div>
+      <div class="panel-body panel-placeholder">Reserved panel</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Placeholder 02</div>
+      <div class="panel-body panel-placeholder">Reserved panel</div>
+    </section>
   </main>
 
 </div>
@@ -46,7 +61,8 @@
   const dot       = document.getElementById('dot');
   const connLabel = document.getElementById('conn-label');
   const statCount = document.getElementById('stat-count');
-  const statTarget = document.getElementById('stat-target');
+  const statOscIn = document.getElementById('stat-osc-in');
+  const statOscOut = document.getElementById('stat-osc-out');
   const statClients = document.getElementById('stat-clients');
 
   let count   = 0;
@@ -59,7 +75,8 @@
       const res  = await fetch('/api/status');
       const json = await res.json();
       statClients.textContent = json.sse_clients;
-      statTarget.textContent = json.osc_output;
+      statOscIn.textContent = json.osc_input;
+      statOscOut.textContent = json.osc_output;
     } catch (_) {}
   }
   pollStatus();

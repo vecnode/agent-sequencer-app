@@ -3,6 +3,7 @@
 :root {
   --bg: #0e0e0e;
   --surface: #161616;
+  --surface-alt: #121212;
   --border: #2a2a2a;
   --text: #d4d4d4;
   --muted: #555;
@@ -83,8 +84,46 @@ header .sep { color: var(--border); }
 
 main {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   overflow: hidden;
+}
+
+.panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-alt) 100%);
+}
+
+.panel-stream {
+  background: var(--surface);
+}
+
+.panel:last-child {
+  border-bottom: none;
+}
+
+.panel-header {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panel-subheader {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-height: 30px;
+  padding: 4px 20px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.panel-stream-stats .stat {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .toolbar {
@@ -95,6 +134,24 @@ main {
   border-bottom: 1px solid var(--border);
   font-size: 11px;
   color: var(--muted);
+}
+
+.panel-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0)),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 24px,
+      rgba(255, 255, 255, 0.03) 24px,
+      rgba(255, 255, 255, 0.03) 25px
+    );
 }
 
 .toolbar button {
@@ -126,20 +183,14 @@ main {
 .message {
   display: grid;
   grid-template-columns: 110px 1.4fr 1fr 0.9fr;
-  gap: 12px;
+  gap: 4px 12px;
   align-items: baseline;
-  padding: 5px 20px;
-  border-bottom: 1px solid transparent;
+  padding: 2px 20px;
   transition: background 0.1s;
-  animation: fadein 0.15s ease;
 }
 
 .message:hover { background: var(--surface); }
 
-@keyframes fadein {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 
 .msg-time {
   color: var(--muted);
@@ -171,8 +222,9 @@ main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100%;
+  justify-content: flex-start;
+  min-height: 100%;
+  padding-top: 24px;
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
@@ -201,9 +253,20 @@ main {
   header {
     padding: 0 10px;
     gap: 8px;
+    flex-wrap: wrap;
+    min-height: 48px;
+    height: auto;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   .toolbar {
     padding: 8px 10px;
+  }
+
+  .panel-subheader {
+    min-height: 28px;
+    padding: 4px 10px;
+    gap: 10px;
   }
 }
