@@ -71,7 +71,7 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway) -> FastAPI:
         thread_manager.kill_all()
 
     app = FastAPI(
-        title="Montage Platform",
+        title="sequence-orchestrator",
         version="0.1.0",
         docs_url=None,
         redoc_url=None,
@@ -84,6 +84,10 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway) -> FastAPI:
         return HTMLResponse(
             content=(STATIC_DIR / "index.html").read_text(encoding="utf-8")
         )
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok", "service": "sequence-orchestrator"}
 
     @app.get("/api/status")
     async def api_status():

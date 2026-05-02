@@ -1,7 +1,7 @@
 [project]
 
-name = "montage-sequencer"
-description = "AI-assisted montage sequencer platform."
+name = "sequence-orchestrator"
+description = "sequence-orchestrator"
 version = "0.1.0"
 requires-python = ">=3.9"
 

@@ -1,4 +1,6 @@
-# Entry point for the Montage Sequencer platform
+# Entry point for the sequence-orchestrator platform
+
+import asyncio
 
 import uvicorn
 
@@ -11,7 +13,7 @@ from .utils.logger import get_logger
 logger = get_logger("main")
 
 
-def main():
+async def main():
     config = Config()
     event_bus = EventBus()
     thread_manager = ThreadManager()
@@ -19,9 +21,17 @@ def main():
 
     app = create_app(event_bus, thread_manager, td_sender)
 
-    logger.info(f"Starting Montage Platform → http://{config.WEB_HOST}:{config.WEB_PORT}")
-    uvicorn.run(app, host=config.WEB_HOST, port=config.WEB_PORT, log_level="warning")
+    logger.info(f"Starting Sequence Orchestrator Platform → http://{config.WEB_HOST}:{config.WEB_PORT}")
+
+    server_config = uvicorn.Config(
+        app,
+        host=config.WEB_HOST,
+        port=config.WEB_PORT,
+        log_level="warning",
+    )
+    server = uvicorn.Server(server_config)
+    await server.serve()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
