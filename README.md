@@ -1,5 +1,6 @@
 # montage-sequencer
-AI-assisted montage sequencer
+
+Montage sequencer
 
 ### Reproduce
 

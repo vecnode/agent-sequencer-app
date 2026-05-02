@@ -6,6 +6,8 @@ load_dotenv()
 class Config:
     TD_HOST = os.getenv("TD_HOST", "127.0.0.1")
     TD_PORT = int(os.getenv("TD_PORT", 7000))
+    OSC_INPUT_HOST = os.getenv("OSC_INPUT_HOST", "0.0.0.0")
+    OSC_INPUT_PORT = int(os.getenv("OSC_INPUT_PORT", 7001))
     MODEL_NAME = os.getenv("MODEL_NAME", "feature-extraction")
     DEVICE = os.getenv("DEVICE", "cuda")
     THREAD_TIMEOUT_SECONDS = float(os.getenv("THREAD_TIMEOUT_SECONDS", 5.0))

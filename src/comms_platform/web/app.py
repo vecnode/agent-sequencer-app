@@ -3,9 +3,12 @@ import json
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from ..utils.logger import get_logger
 
@@ -50,7 +53,16 @@ class EventBus:
             return len(self._subscribers)
 
 
-def create_app(event_bus: EventBus, thread_manager) -> FastAPI:
+class SignalPayload(BaseModel):
+    address: str
+    params: list[Any] = Field(default_factory=list)
+    source: str = "external-app"
+    protocol: str = "stream"
+    direction: str = "inbound"
+    target: str = "platform"
+
+
+def create_app(event_bus: EventBus, thread_manager, signal_gateway) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         event_bus.attach_loop(asyncio.get_running_loop())
@@ -65,6 +77,7 @@ def create_app(event_bus: EventBus, thread_manager) -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index():
@@ -77,7 +90,45 @@ def create_app(event_bus: EventBus, thread_manager) -> FastAPI:
         return {
             "status": "running",
             "sse_clients": event_bus.subscriber_count,
+            "osc_output": f"{signal_gateway.osc_output_host}:{signal_gateway.osc_output_port}",
+            "osc_input": f"{signal_gateway.osc_input_host}:{signal_gateway.osc_input_port}",
         }
+
+    @app.post("/api/signals/publish")
+    async def publish_signal(payload: SignalPayload):
+        signal_gateway.publish_stream(
+            address=payload.address,
+            params=payload.params,
+            source=payload.source,
+            protocol=payload.protocol,
+            direction=payload.direction,
+            target=payload.target,
+        )
+        return {"accepted": True}
+
+    @app.post("/api/signals/send")
+    async def send_signal(payload: SignalPayload):
+        if payload.protocol.lower() == "osc":
+            signal_gateway.enqueue(
+                address=payload.address,
+                params=payload.params,
+                source=payload.source,
+            )
+            return {
+                "accepted": True,
+                "transport": "osc",
+                "target": f"{signal_gateway.osc_output_host}:{signal_gateway.osc_output_port}",
+            }
+
+        signal_gateway.publish_stream(
+            address=payload.address,
+            params=payload.params,
+            source=payload.source,
+            protocol=payload.protocol,
+            direction="outbound",
+            target=payload.target,
+        )
+        return {"accepted": True, "transport": "stream"}
 
     @app.get("/events")
     async def sse_events():

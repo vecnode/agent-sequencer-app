@@ -15,9 +15,9 @@ def main():
     config = Config()
     event_bus = EventBus()
     thread_manager = ThreadManager()
-    td_sender = TouchDesignerSender(config, thread_manager, event_bus)  # noqa: F841
+    td_sender = TouchDesignerSender(config, thread_manager, event_bus)
 
-    app = create_app(event_bus, thread_manager)
+    app = create_app(event_bus, thread_manager, td_sender)
 
     logger.info(f"Starting Montage Platform → http://{config.WEB_HOST}:{config.WEB_PORT}")
     uvicorn.run(app, host=config.WEB_HOST, port=config.WEB_PORT, log_level="warning")
