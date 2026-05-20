@@ -4,6 +4,7 @@ import asyncio
 
 import uvicorn
 
+from .agent_coordinator import AgentCoordinator
 from .config import Config
 from .td_sender import TouchDesignerSender
 from .thread_manager import ThreadManager
@@ -18,8 +19,9 @@ async def main():
     event_bus = EventBus()
     thread_manager = ThreadManager()
     td_sender = TouchDesignerSender(config, thread_manager, event_bus)
+    agent_coordinator = AgentCoordinator()
 
-    app = create_app(event_bus, thread_manager, td_sender)
+    app = create_app(event_bus, thread_manager, td_sender, agent_coordinator)
 
     logger.info(f"Starting Sequence Orchestrator Platform → http://{config.WEB_HOST}:{config.WEB_PORT}")
 

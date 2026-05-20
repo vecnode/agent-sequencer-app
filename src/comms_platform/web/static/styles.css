@@ -154,6 +154,109 @@ main {
   min-height: 0;
 }
 
+.widget-terminal {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(0, 212, 255, 0.03), rgba(0, 212, 255, 0.01)),
+    var(--surface-alt);
+}
+
+.widget-terminal-body {
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background: #0d0d0d;
+  padding: 10px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.widget-terminal-body div {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.widget-agent {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(0, 212, 255, 0.04), rgba(0, 212, 255, 0.01)),
+    var(--surface-alt);
+}
+
+.widget-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.widget-agent-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.widget-agent-controls-secondary {
+  margin-top: -2px;
+}
+
+.agent-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.agent-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-btn-on:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.agent-btn-off:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.widget-agent-status {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.widget-agent-status .sep {
+  margin: 0 8px;
+  color: var(--border);
+}
+
+.agent-status-on {
+  color: var(--green);
+}
+
+.agent-status-off {
+  color: var(--red);
+}
+
 .panel {
   min-height: 0;
   display: grid;
@@ -320,6 +423,12 @@ main {
   .dashboard-grid {
     grid-template-columns: 1fr;
     grid-template-rows: repeat(6, minmax(90px, 1fr));
+  }
+
+  .widget-terminal {
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 220px;
   }
 
   .message {

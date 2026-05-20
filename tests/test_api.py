@@ -8,12 +8,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from comms_platform.web.app import EventBus, create_app
 
 
-class DummyThreadManager:
+class StubThreadManager:
     def kill_all(self):
         pass
 
 
-class DummySignalGateway:
+class StubAgentCoordinator:
+    def __init__(self):
+        self._running = False
+        self.heartbeat_count = 0
+        self.broadcast_enabled = False
+
+    @property
+    def is_running(self):
+        return self._running
+
+    def start(self):
+        if self._running:
+            return False
+        self._running = True
+        return True
+
+    def stop(self):
+        if not self._running:
+            return False
+        self._running = False
+        return True
+
+    def set_broadcast(self, enabled: bool):
+        self.broadcast_enabled = enabled
+        return self.broadcast_enabled
+
+
+class StubSignalGateway:
     osc_output_host = "127.0.0.1"
     osc_output_port = 9000
     osc_input_host = "0.0.0.0"
@@ -33,8 +60,9 @@ class DummySignalGateway:
 def _build_client() -> TestClient:
     app = create_app(
         event_bus=EventBus(),
-        thread_manager=DummyThreadManager(),
-        signal_gateway=DummySignalGateway(),
+        thread_manager=StubThreadManager(),
+        signal_gateway=StubSignalGateway(),
+        agent_coordinator=StubAgentCoordinator(),
     )
     return TestClient(app)
 
@@ -66,6 +94,7 @@ def test_status_endpoint_reports_server_active():
     assert "sse_clients" in body
     assert "osc_input" in body
     assert "osc_output" in body
+    assert "agent_broadcast" in body
     _log_test(
         "GET /api/status",
         "status_code="
@@ -75,11 +104,12 @@ def test_status_endpoint_reports_server_active():
 
 
 def test_signals_publish_accepted():
-    gateway = DummySignalGateway()
+    gateway = StubSignalGateway()
     app = create_app(
         event_bus=EventBus(),
-        thread_manager=DummyThreadManager(),
+        thread_manager=StubThreadManager(),
         signal_gateway=gateway,
+        agent_coordinator=StubAgentCoordinator(),
     )
     with TestClient(app) as client:
         response = client.post(
@@ -99,11 +129,12 @@ def test_signals_publish_accepted():
 
 
 def test_signals_send_stream_transport():
-    gateway = DummySignalGateway()
+    gateway = StubSignalGateway()
     app = create_app(
         event_bus=EventBus(),
-        thread_manager=DummyThreadManager(),
+        thread_manager=StubThreadManager(),
         signal_gateway=gateway,
+        agent_coordinator=StubAgentCoordinator(),
     )
     with TestClient(app) as client:
         response = client.post(
@@ -124,11 +155,12 @@ def test_signals_send_stream_transport():
 
 
 def test_signals_send_osc_transport():
-    gateway = DummySignalGateway()
+    gateway = StubSignalGateway()
     app = create_app(
         event_bus=EventBus(),
-        thread_manager=DummyThreadManager(),
+        thread_manager=StubThreadManager(),
         signal_gateway=gateway,
+        agent_coordinator=StubAgentCoordinator(),
     )
     with TestClient(app) as client:
         response = client.post(
@@ -147,3 +179,43 @@ def test_signals_send_osc_transport():
         f"status_code={response.status_code}, transport={body['transport']}, "
         f"target={body['target']}, address={call['address']}, params={call['params']}",
     )
+
+
+def test_agent_start_and_stop_endpoints():
+    with _build_client() as client:
+        start_response = client.post("/api/agent/start")
+        assert start_response.status_code == 200
+        start_body = start_response.json()
+        assert start_body["ok"] is True
+        assert start_body["running"] is True
+
+        stop_response = client.post("/api/agent/stop")
+        assert stop_response.status_code == 200
+        stop_body = stop_response.json()
+        assert stop_body["ok"] is True
+        assert stop_body["running"] is False
+
+        _log_test(
+            "POST /api/agent/start + /api/agent/stop",
+            f"start_running={start_body['running']}, stop_running={stop_body['running']}",
+        )
+
+
+def test_agent_broadcast_on_and_off_endpoints():
+    with _build_client() as client:
+        on_response = client.post("/api/agent/broadcast/on")
+        assert on_response.status_code == 200
+        on_body = on_response.json()
+        assert on_body["ok"] is True
+        assert on_body["broadcast"] is True
+
+        off_response = client.post("/api/agent/broadcast/off")
+        assert off_response.status_code == 200
+        off_body = off_response.json()
+        assert off_body["ok"] is True
+        assert off_body["broadcast"] is False
+
+        _log_test(
+            "POST /api/agent/broadcast/on + /api/agent/broadcast/off",
+            f"broadcast_on={on_body['broadcast']}, broadcast_off={off_body['broadcast']}",
+        )

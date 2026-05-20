@@ -62,12 +62,14 @@ class SignalPayload(BaseModel):
     target: str = "platform"
 
 
-def create_app(event_bus: EventBus, thread_manager, signal_gateway) -> FastAPI:
+def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordinator) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         event_bus.attach_loop(asyncio.get_running_loop())
         logger.info("EventBus attached to asyncio loop.")
         yield
+        if agent_coordinator.is_running:
+            agent_coordinator.stop()
         thread_manager.kill_all()
 
     app = FastAPI(
@@ -96,6 +98,45 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway) -> FastAPI:
             "sse_clients": event_bus.subscriber_count,
             "osc_output": f"{signal_gateway.osc_output_host}:{signal_gateway.osc_output_port}",
             "osc_input": f"{signal_gateway.osc_input_host}:{signal_gateway.osc_input_port}",
+            "agent_running": agent_coordinator.is_running,
+            "agent_heartbeats": agent_coordinator.heartbeat_count,
+            "agent_broadcast": agent_coordinator.broadcast_enabled,
+        }
+
+    @app.post("/api/agent/start")
+    async def start_agent():
+        started = agent_coordinator.start()
+        return {
+            "ok": True,
+            "started": started,
+            "running": agent_coordinator.is_running,
+        }
+
+    @app.post("/api/agent/stop")
+    async def stop_agent():
+        stopped = agent_coordinator.stop()
+        return {
+            "ok": True,
+            "stopped": stopped,
+            "running": agent_coordinator.is_running,
+        }
+
+    @app.post("/api/agent/broadcast/on")
+    async def enable_agent_broadcast():
+        enabled = agent_coordinator.set_broadcast(True)
+        return {
+            "ok": True,
+            "broadcast": enabled,
+            "running": agent_coordinator.is_running,
+        }
+
+    @app.post("/api/agent/broadcast/off")
+    async def disable_agent_broadcast():
+        enabled = agent_coordinator.set_broadcast(False)
+        return {
+            "ok": True,
+            "broadcast": enabled,
+            "running": agent_coordinator.is_running,
         }
 
     @app.post("/api/signals/publish")

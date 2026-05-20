@@ -26,14 +26,36 @@
   <main>
     <section class="tab-panel active" id="panel-dashboard" role="region" aria-labelledby="tab-dashboard">
       <section class="panel dashboard-panel">
-        <div class="panel-header">Dashboard</div>
+
         <div class="panel-body dashboard-grid">
-          <div class="dashboard-block panel-placeholder">Widget 01</div>
-          <div class="dashboard-block panel-placeholder">Widget 02</div>
+          <div class="dashboard-block widget-agent">
+            <div class="widget-title">Widget 01 · Agent Coordinator</div>
+            <div class="widget-agent-controls">
+              <button id="btn-agent-on" class="agent-btn agent-btn-on" type="button">Agent ON</button>
+              <button id="btn-agent-off" class="agent-btn agent-btn-off" type="button">Agent OFF</button>
+            </div>
+            <div class="widget-agent-controls widget-agent-controls-secondary">
+              <button id="btn-broadcast-on" class="agent-btn" type="button">Broadcast ON</button>
+              <button id="btn-broadcast-off" class="agent-btn" type="button">Broadcast OFF</button>
+            </div>
+            <div class="widget-agent-status">
+              Status: <span id="agent-status" class="agent-status-off">OFF</span>
+              <span class="sep">|</span>
+              Broadcast: <span id="agent-broadcast" class="agent-status-off">OFF</span>
+            </div>
+          </div>
+          <div class="dashboard-block widget-terminal" aria-label="Widget terminal">
+            <div class="widget-title">Widget 02/04/06 · Terminal</div>
+            <div class="widget-terminal-body">
+              <div>&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit.</div>
+              <div>&gt; Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</div>
+              <div>&gt; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</div>
+              <div>&gt; Nisi ut aliquip ex ea commodo consequat.</div>
+              <div>&gt; Duis aute irure dolor in reprehenderit in voluptate velit esse.</div>
+            </div>
+          </div>
           <div class="dashboard-block panel-placeholder">Widget 03</div>
-          <div class="dashboard-block panel-placeholder">Widget 04</div>
           <div class="dashboard-block panel-placeholder">Widget 05</div>
-          <div class="dashboard-block panel-placeholder">Widget 06</div>
         </div>
       </section>
     </section>
@@ -85,6 +107,12 @@
   const statOscIn = document.getElementById('stat-osc-in');
   const statOscOut = document.getElementById('stat-osc-out');
   const statClients = document.getElementById('stat-clients');
+  const btnAgentOn = document.getElementById('btn-agent-on');
+  const btnAgentOff = document.getElementById('btn-agent-off');
+  const btnBroadcastOn = document.getElementById('btn-broadcast-on');
+  const btnBroadcastOff = document.getElementById('btn-broadcast-off');
+  const agentStatus = document.getElementById('agent-status');
+  const agentBroadcast = document.getElementById('agent-broadcast');
   const tabs = document.querySelectorAll('.tab');
   const tabPanels = {
     dashboard: document.getElementById('panel-dashboard'),
@@ -118,10 +146,14 @@
       statClients.textContent = json.sse_clients;
       statOscIn.textContent = json.osc_input;
       statOscOut.textContent = json.osc_output;
+      setAgentUi(
+        Boolean(json.agent_running),
+        Boolean(json.agent_broadcast)
+      );
     } catch (_) {}
   }
   pollStatus();
-  setInterval(pollStatus, 5000);
+  setInterval(pollStatus, 1000);
 
   // ── SSE ─────────────────────────────────────────────────────────
   function connect() {
@@ -197,6 +229,44 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
   }
+
+  function setAgentUi(isRunning, isBroadcastEnabled) {
+    agentStatus.textContent = isRunning ? 'ON' : 'OFF';
+    agentStatus.className = isRunning ? 'agent-status-on' : 'agent-status-off';
+    agentBroadcast.textContent = isBroadcastEnabled ? 'ON' : 'OFF';
+    agentBroadcast.className = isBroadcastEnabled ? 'agent-status-on' : 'agent-status-off';
+    btnAgentOn.disabled = isRunning;
+    btnAgentOff.disabled = !isRunning;
+    btnBroadcastOn.disabled = isBroadcastEnabled;
+    btnBroadcastOff.disabled = !isBroadcastEnabled;
+  }
+
+  async function toggleAgent(url) {
+    btnAgentOn.disabled = true;
+    btnAgentOff.disabled = true;
+    try {
+      await fetch(url, { method: 'POST' });
+      await pollStatus();
+    } catch (_) {
+      await pollStatus();
+    }
+  }
+
+  async function toggleBroadcast(url) {
+    btnBroadcastOn.disabled = true;
+    btnBroadcastOff.disabled = true;
+    try {
+      await fetch(url, { method: 'POST' });
+      await pollStatus();
+    } catch (_) {
+      await pollStatus();
+    }
+  }
+
+  btnAgentOn.addEventListener('click', () => toggleAgent('/api/agent/start'));
+  btnAgentOff.addEventListener('click', () => toggleAgent('/api/agent/stop'));
+  btnBroadcastOn.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/on'));
+  btnBroadcastOff.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/off'));
 </script>
 </body>
 </html>
