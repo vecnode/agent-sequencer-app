@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import subprocess
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,6 +17,8 @@ from ..utils.logger import get_logger
 logger = get_logger("web.app")
 
 STATIC_DIR = Path(__file__).parent / "static"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLE_TOE_PATH = PROJECT_ROOT / "touchdesigner" / "example1.toe"
 
 
 class EventBus:
@@ -137,6 +141,37 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
             "ok": True,
             "broadcast": enabled,
             "running": agent_coordinator.is_running,
+        }
+
+    @app.post("/api/touchdesigner/run-example")
+    async def run_touchdesigner_example():
+        toe_path = EXAMPLE_TOE_PATH.resolve()
+        if not toe_path.exists():
+            return {
+                "ok": False,
+                "error": "TouchDesigner file not found.",
+                "path": str(toe_path),
+            }
+
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(toe_path))  # type: ignore[attr-defined]
+            elif os.name == "posix":
+                opener = "open" if Path("/usr/bin/open").exists() else "xdg-open"
+                subprocess.Popen([opener, str(toe_path)])
+            else:
+                raise RuntimeError("Unsupported operating system for launching .toe files")
+        except Exception as exc:
+            logger.exception("Failed to launch TouchDesigner file: %s", toe_path)
+            return {
+                "ok": False,
+                "error": str(exc),
+                "path": str(toe_path),
+            }
+
+        return {
+            "ok": True,
+            "path": str(toe_path),
         }
 
     @app.post("/api/signals/publish")

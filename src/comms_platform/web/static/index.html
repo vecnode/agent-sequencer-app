@@ -54,7 +54,15 @@
               <div>&gt; Duis aute irure dolor in reprehenderit in voluptate velit esse.</div>
             </div>
           </div>
-          <div class="dashboard-block panel-placeholder">Widget 03</div>
+          <div class="dashboard-block widget-settings" aria-label="Widget settings">
+            <div class="widget-title">Widget 03 · Settings</div>
+            <div class="widget-settings-body">
+              <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Run example1.toe</button>
+              <div class="widget-settings-status">
+                TouchDesigner: <span id="td-launch-status" class="agent-status-off">IDLE</span>
+              </div>
+            </div>
+          </div>
           <div class="dashboard-block panel-placeholder">Widget 05</div>
         </div>
       </section>
@@ -111,8 +119,10 @@
   const btnAgentOff = document.getElementById('btn-agent-off');
   const btnBroadcastOn = document.getElementById('btn-broadcast-on');
   const btnBroadcastOff = document.getElementById('btn-broadcast-off');
+  const btnRunExampleToe = document.getElementById('btn-run-example-toe');
   const agentStatus = document.getElementById('agent-status');
   const agentBroadcast = document.getElementById('agent-broadcast');
+  const tdLaunchStatus = document.getElementById('td-launch-status');
   const tabs = document.querySelectorAll('.tab');
   const tabPanels = {
     dashboard: document.getElementById('panel-dashboard'),
@@ -263,10 +273,32 @@
     }
   }
 
+  function setTdLaunchStatus(state, klass) {
+    tdLaunchStatus.textContent = state;
+    tdLaunchStatus.className = klass;
+  }
+
+  async function runExampleToe() {
+    btnRunExampleToe.disabled = true;
+    setTdLaunchStatus('LAUNCHING', 'agent-status-on');
+    try {
+      const res = await fetch('/api/touchdesigner/run-example', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error('launch failed');
+      }
+      setTdLaunchStatus('RUNNING', 'agent-status-on');
+    } catch (_) {
+      setTdLaunchStatus('ERROR', 'agent-status-off');
+    } finally {
+      btnRunExampleToe.disabled = false;
+    }
+  }
+
   btnAgentOn.addEventListener('click', () => toggleAgent('/api/agent/start'));
   btnAgentOff.addEventListener('click', () => toggleAgent('/api/agent/stop'));
   btnBroadcastOn.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/on'));
   btnBroadcastOff.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/off'));
+  btnRunExampleToe.addEventListener('click', runExampleToe);
 </script>
 </body>
 </html>

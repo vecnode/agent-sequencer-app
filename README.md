@@ -1,8 +1,10 @@
-# sequence-orchestrator
+# agent-sequencer-app
 
 Under development. 
 
+This repository has the template to start building sequencer LLM agents (SLLMA). SLLMAs are agents able to execute tools but coordinate them for multimodal generation.
 
+Coordination is mandatory for critical environments.
 
 ## Reproduce (Host)
 
@@ -14,10 +16,13 @@ Under development.
 uv venv
 uv pip install -r requirements.txt
 
-# 2. Run the platform
+# 2. Install this repo in editable mode
 uv pip install -e .
+
+# 3. Run the platform
 uv run python -m comms_platform.main
 ```
+
 
 ## Docker (Windows)
 
@@ -43,4 +48,5 @@ The API tests include:
 - `POST /api/signals/publish` — stream publish accepted, gateway called with correct args
 - `POST /api/signals/send` (stream) — stream transport selected, publish_stream invoked
 - `POST /api/signals/send` (osc) — OSC transport selected, enqueue invoked, target address returned
+- `POST /api/touchdesigner/run-example` — launches `touchdesigner/example1.toe`
 

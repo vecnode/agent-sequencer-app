@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -218,4 +219,27 @@ def test_agent_broadcast_on_and_off_endpoints():
         _log_test(
             "POST /api/agent/broadcast/on + /api/agent/broadcast/off",
             f"broadcast_on={on_body['broadcast']}, broadcast_off={off_body['broadcast']}",
+        )
+
+
+def test_touchdesigner_run_example_endpoint():
+    with _build_client() as client:
+        if hasattr(sys.modules["os"], "startfile"):
+            with patch("comms_platform.web.app.os.startfile") as mocked_startfile:
+                response = client.post("/api/touchdesigner/run-example")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["ok"] is True
+            mocked_startfile.assert_called_once()
+        else:
+            with patch("comms_platform.web.app.subprocess.Popen") as mocked_popen:
+                response = client.post("/api/touchdesigner/run-example")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["ok"] is True
+            mocked_popen.assert_called_once()
+
+        _log_test(
+            "POST /api/touchdesigner/run-example",
+            f"status_code={response.status_code}, ok={body['ok']}, path={body['path']}",
         )
