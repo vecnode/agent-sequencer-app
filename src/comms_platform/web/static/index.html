@@ -28,7 +28,7 @@
       <section class="panel dashboard-panel">
 
         <div class="panel-body dashboard-grid">
-          <div class="dashboard-block widget-agent">
+          <div class="dashboard-block widget-panel widget-agent">
             <div class="widget-title">Widget 01 · Agent Coordinator</div>
             <div class="widget-agent-controls">
               <button id="btn-agent-on" class="agent-btn agent-btn-on" type="button">Agent ON</button>
@@ -44,26 +44,37 @@
               Broadcast: <span id="agent-broadcast" class="agent-status-off">OFF</span>
             </div>
           </div>
-          <div class="dashboard-block widget-terminal" aria-label="Widget terminal">
-            <div class="widget-title">Widget 02/04/06 · Terminal</div>
-            <div class="widget-terminal-body">
-              <div>&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit.</div>
-              <div>&gt; Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</div>
-              <div>&gt; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</div>
-              <div>&gt; Nisi ut aliquip ex ea commodo consequat.</div>
-              <div>&gt; Duis aute irure dolor in reprehenderit in voluptate velit esse.</div>
+          <div class="dashboard-block widget-panel widget-terminal" aria-label="Widget terminal">
+            <div class="widget-title">Widget 02 · Terminal Output</div>
+            <div id="terminal-feed" class="widget-terminal-body">
+              <div class="terminal-line">&gt; Waiting for backend logs and stream messages...</div>
             </div>
           </div>
-          <div class="dashboard-block widget-settings" aria-label="Widget settings">
+          <div class="dashboard-block widget-panel widget-settings" aria-label="Widget settings">
             <div class="widget-title">Widget 03 · Settings</div>
             <div class="widget-settings-body">
               <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Run example1.toe</button>
               <div class="widget-settings-status">
                 TouchDesigner: <span id="td-launch-status" class="agent-status-off">IDLE</span>
               </div>
+              <button id="btn-send-td-test-data" class="agent-btn settings-btn" type="button">Send test data</button>
+              <div class="widget-settings-status">
+                TD Webserver: <span id="td-send-status" class="agent-status-off">IDLE</span>
+              </div>
             </div>
           </div>
-          <div class="dashboard-block panel-placeholder">Widget 05</div>
+          <div class="dashboard-block widget-panel widget-ollama" aria-label="Widget ollama">
+            <div class="widget-title">Widget 05 · Ollama</div>
+            <div class="widget-ollama-body">
+              <button id="btn-check-ollama" class="agent-btn settings-btn" type="button">Check Ollama</button>
+              <div class="widget-settings-status">
+                Ollama: <span id="ollama-status" class="agent-status-off">UNKNOWN</span>
+              </div>
+              <div class="widget-settings-status">
+                Models: <span id="ollama-model-count">0</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </section>
@@ -120,9 +131,15 @@
   const btnBroadcastOn = document.getElementById('btn-broadcast-on');
   const btnBroadcastOff = document.getElementById('btn-broadcast-off');
   const btnRunExampleToe = document.getElementById('btn-run-example-toe');
+  const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
+  const btnCheckOllama = document.getElementById('btn-check-ollama');
   const agentStatus = document.getElementById('agent-status');
   const agentBroadcast = document.getElementById('agent-broadcast');
   const tdLaunchStatus = document.getElementById('td-launch-status');
+  const tdSendStatus = document.getElementById('td-send-status');
+  const ollamaStatus = document.getElementById('ollama-status');
+  const ollamaModelCount = document.getElementById('ollama-model-count');
+  const terminalFeed = document.getElementById('terminal-feed');
   const tabs = document.querySelectorAll('.tab');
   const tabPanels = {
     dashboard: document.getElementById('panel-dashboard'),
@@ -132,6 +149,19 @@
   let count   = 0;
   let paused  = false;
   const MAX_ROWS = 200;
+  const TERMINAL_MAX_ROWS = 400;
+
+  function pushTerminalLine(text, className = '') {
+    const row = document.createElement('div');
+    row.className = className ? `terminal-line ${className}` : 'terminal-line';
+    row.textContent = text;
+    terminalFeed.appendChild(row);
+
+    while (terminalFeed.children.length > TERMINAL_MAX_ROWS) {
+      terminalFeed.removeChild(terminalFeed.firstChild);
+    }
+    terminalFeed.scrollTop = terminalFeed.scrollHeight;
+  }
 
   function setActiveTab(tabName) {
     tabs.forEach((tab) => {
@@ -180,9 +210,26 @@
     };
 
     source.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+
+      if (data.kind === 'log') {
+        const level = String(data.level || 'INFO').toUpperCase();
+        const line = data.text || `[${level}] ${data.logger || 'app'}: ${data.message || ''}`;
+        pushTerminalLine(line, `terminal-log-${level.toLowerCase()}`);
+        return;
+      }
+
       if (paused) return;
 
-      const data = JSON.parse(e.data);
+      // Mirror stream events into the dashboard terminal panel.
+      const signalAddr = data.address || '/unknown';
+      const signalSource = data.source || 'unknown';
+      const signalParams = Array.isArray(data.params) ? data.params : [data.params];
+      pushTerminalLine(
+        `[STREAM] ${signalAddr} ${JSON.stringify(signalParams)} (${signalSource})`,
+        'terminal-log-stream'
+      );
+
       count++;
       statCount.textContent = count;
 
@@ -284,13 +331,70 @@
     try {
       const res = await fetch('/api/touchdesigner/run-example', { method: 'POST' });
       if (!res.ok) {
+        pushTerminalLine('[TD] ERROR launching example1.toe', 'terminal-log-error');
         throw new Error('launch failed');
       }
+      pushTerminalLine('[TD] example1.toe launch requested', 'terminal-log-info');
       setTdLaunchStatus('RUNNING', 'agent-status-on');
     } catch (_) {
+      pushTerminalLine('[TD] ERROR launch failed', 'terminal-log-error');
       setTdLaunchStatus('ERROR', 'agent-status-off');
     } finally {
       btnRunExampleToe.disabled = false;
+    }
+  }
+
+  function setTdSendStatus(state, klass) {
+    tdSendStatus.textContent = state;
+    tdSendStatus.className = klass;
+  }
+
+  async function sendTdTestData() {
+    btnSendTdTestData.disabled = true;
+    setTdSendStatus('SENDING', 'agent-status-on');
+    try {
+      const res = await fetch('/api/touchdesigner/send-test-data', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        pushTerminalLine('[TD] Test data sent successfully', 'terminal-log-info');
+        setTdSendStatus('SENT', 'agent-status-on');
+      } else {
+        pushTerminalLine(`[TD] ERROR sending test data (${json.error || 'request failed'})`, 'terminal-log-error');
+        setTdSendStatus('ERROR', 'agent-status-off');
+      }
+    } catch (_) {
+      pushTerminalLine('[TD] ERROR sending test data (network/unknown)', 'terminal-log-error');
+      setTdSendStatus('ERROR', 'agent-status-off');
+    } finally {
+      btnSendTdTestData.disabled = false;
+    }
+  }
+
+  function setOllamaStatus(isUp, modelCount) {
+    ollamaStatus.textContent = isUp ? 'ONLINE' : 'OFFLINE';
+    ollamaStatus.className = isUp ? 'agent-status-on' : 'agent-status-off';
+    ollamaModelCount.textContent = String(modelCount ?? 0);
+  }
+
+  async function checkOllamaStatus() {
+    btnCheckOllama.disabled = true;
+    setOllamaStatus(false, 0);
+    pushTerminalLine('[OLLAMA] Checking service status...', 'terminal-log-info');
+    try {
+      const res = await fetch('/api/ollama/status');
+      const json = await res.json();
+      const isUp = Boolean(res.ok && json.ok);
+      setOllamaStatus(isUp, json.models_count || 0);
+      if (isUp) {
+        pushTerminalLine(`[OLLAMA] ONLINE (${json.models_count || 0} models)`, 'terminal-log-info');
+      } else {
+        pushTerminalLine(`[OLLAMA] OFFLINE (${json.error || 'unknown error'})`, 'terminal-log-error');
+      }
+    } catch (err) {
+      setOllamaStatus(false, 0);
+      pushTerminalLine(`[OLLAMA] OFFLINE (${err})`, 'terminal-log-error');
+    } finally {
+      btnCheckOllama.disabled = false;
     }
   }
 
@@ -299,6 +403,8 @@
   btnBroadcastOn.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/on'));
   btnBroadcastOff.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/off'));
   btnRunExampleToe.addEventListener('click', runExampleToe);
+  btnSendTdTestData.addEventListener('click', sendTdTestData);
+  btnCheckOllama.addEventListener('click', checkOllamaStatus);
 </script>
 </body>
 </html>

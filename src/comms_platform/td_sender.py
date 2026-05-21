@@ -137,9 +137,21 @@ class TouchDesignerSender:
             )
 
         dispatcher.set_default_handler(on_osc)
-        server = ThreadingOSCUDPServer(
-            (self.osc_input_host, self.osc_input_port), dispatcher
-        )
+
+        try:
+            server = ThreadingOSCUDPServer(
+                (self.osc_input_host, self.osc_input_port), dispatcher
+            )
+        except OSError as exc:
+            self.logger.error(
+                "Cannot bind OSC input on %s:%s — %s. "
+                "Is another instance already running?",
+                self.osc_input_host,
+                self.osc_input_port,
+                exc,
+            )
+            return
+
         server.timeout = 0.2
         self.logger.info(
             "Listening for OSC input on %s:%s",

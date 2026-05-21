@@ -154,6 +154,41 @@ main {
   min-height: 0;
 }
 
+.widget-panel {
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(0, 212, 255, 0.04), rgba(0, 212, 255, 0.01)),
+    var(--surface-alt);
+}
+
+.widget-agent {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+}
+
+.widget-settings {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 12px;
+}
+
+.widget-ollama {
+  grid-column: 1;
+  grid-row: 3;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 12px;
+}
+
 .widget-terminal {
   grid-column: 2;
   grid-row: 1 / span 3;
@@ -161,10 +196,6 @@ main {
   grid-template-rows: auto 1fr;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(0, 212, 255, 0.03), rgba(0, 212, 255, 0.01)),
-    var(--surface-alt);
 }
 
 .widget-terminal-body {
@@ -177,35 +208,28 @@ main {
   line-height: 1.55;
 }
 
-.widget-terminal-body div {
+.widget-terminal-body div,
+.terminal-line {
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.widget-agent {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(0, 212, 255, 0.04), rgba(0, 212, 255, 0.01)),
-    var(--surface-alt);
+.terminal-log-info,
+.terminal-log-stream {
+  color: var(--text);
 }
 
-.widget-settings {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(62, 207, 142, 0.07), rgba(62, 207, 142, 0.01)),
-    var(--surface-alt);
+.terminal-log-warning {
+  color: #f6c445;
 }
 
-.widget-settings-body {
+.terminal-log-error,
+.terminal-log-critical {
+  color: var(--red);
+}
+
+.widget-settings-body,
+.widget-ollama-body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -460,6 +484,13 @@ main {
     grid-column: auto;
     grid-row: auto;
     min-height: 220px;
+  }
+
+  .widget-agent,
+  .widget-settings,
+  .widget-ollama {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .message {

@@ -1,13 +1,17 @@
 import asyncio
 import json
+import logging
 import os
+import socket
 import subprocess
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-from fastapi import FastAPI
+from fastapi import Body, FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -19,6 +23,11 @@ logger = get_logger("web.app")
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_TOE_PATH = PROJECT_ROOT / "touchdesigner" / "example1.toe"
+
+_TD_WEB_DEFAULT_HOST = os.getenv("TD_WEB_HOST", "127.0.0.1")
+_TD_WEB_DEFAULT_PORT = int(os.getenv("TD_WEB_PORT", 9980))
+_OLLAMA_DEFAULT_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1")
+_OLLAMA_DEFAULT_PORT = int(os.getenv("OLLAMA_PORT", 11434))
 
 
 class EventBus:
@@ -57,6 +66,31 @@ class EventBus:
             return len(self._subscribers)
 
 
+class EventBusLogHandler(logging.Handler):
+    """Publish backend log records into the SSE event bus for dashboard terminal output."""
+
+    def __init__(self, event_bus: EventBus) -> None:
+        super().__init__()
+        self._event_bus = event_bus
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            text = self.format(record) if self.formatter else record.getMessage()
+            self._event_bus.publish(
+                {
+                    "kind": "log",
+                    "logger": record.name,
+                    "level": record.levelname,
+                    "message": record.getMessage(),
+                    "text": text,
+                    "timestamp": record.created,
+                }
+            )
+        except Exception:
+            # Never let UI streaming failures impact app logging.
+            return
+
+
 class SignalPayload(BaseModel):
     address: str
     params: list[Any] = Field(default_factory=list)
@@ -66,15 +100,94 @@ class SignalPayload(BaseModel):
     target: str = "platform"
 
 
-def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordinator) -> FastAPI:
+class TdWebPayload(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=lambda: {"test_key": "test_value"})
+    timeout: float = Field(default=5.0, gt=0, le=30)
+
+
+def _post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
+    """Synchronous POST to a TouchDesigner Web Server DAT. Must run in a thread executor."""
+    payload_bytes = json.dumps(payload).encode("utf-8")
+    req = Request(
+        url,
+        data=payload_bytes,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            return {
+                "ok": True,
+                "target": url,
+                "payload": payload,
+                "status_code": resp.getcode(),
+                "response": resp.read().decode("utf-8", errors="replace"),
+            }
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+        return {
+            "ok": False,
+            "target": url,
+            "payload": payload,
+            "status_code": exc.code,
+            "error": str(exc),
+            "response": body,
+        }
+    except (URLError, socket.timeout) as exc:
+        return {"ok": False, "target": url, "payload": payload, "error": str(exc)}
+    except Exception as exc:
+        logger.exception("Unexpected error posting to TouchDesigner webserver: %s", url)
+        return {"ok": False, "target": url, "payload": payload, "error": str(exc)}
+
+
+def _fetch_ollama_status(base_url: str, timeout: float = 3.0) -> dict:
+    tags_url = f"{base_url}/api/tags"
+    req = Request(tags_url, method="GET")
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+            models = body.get("models", []) if isinstance(body, dict) else []
+            return {
+                "ok": True,
+                "url": base_url,
+                "status_code": resp.getcode(),
+                "models_count": len(models),
+                "models": [m.get("name", "unknown") for m in models if isinstance(m, dict)],
+            }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "url": base_url,
+            "error": str(exc),
+            "models_count": 0,
+            "models": [],
+        }
+
+
+def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordinator, config=None) -> FastAPI:
+    _td_web_host = getattr(config, "TD_WEB_HOST", None) or _TD_WEB_DEFAULT_HOST
+    _td_web_port = getattr(config, "TD_WEB_PORT", None) or _TD_WEB_DEFAULT_PORT
+    _td_web_url = f"http://{_td_web_host}:{_td_web_port}"
+    _ollama_host = getattr(config, "OLLAMA_HOST", None) or _OLLAMA_DEFAULT_HOST
+    _ollama_port = getattr(config, "OLLAMA_PORT", None) or _OLLAMA_DEFAULT_PORT
+    _ollama_url = f"http://{_ollama_host}:{_ollama_port}"
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        root_logger = logging.getLogger()
+        event_log_handler = EventBusLogHandler(event_bus)
+        event_log_handler.setLevel(logging.INFO)
+        event_log_handler.setFormatter(
+            logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+        )
+        root_logger.addHandler(event_log_handler)
         event_bus.attach_loop(asyncio.get_running_loop())
         logger.info("EventBus attached to asyncio loop.")
         yield
         if agent_coordinator.is_running:
             agent_coordinator.stop()
         thread_manager.kill_all()
+        root_logger.removeHandler(event_log_handler)
 
     app = FastAPI(
         title="sequence-orchestrator",
@@ -173,6 +286,26 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
             "ok": True,
             "path": str(toe_path),
         }
+
+    @app.post("/api/touchdesigner/send-test-data")
+    async def send_touchdesigner_test_data(body: TdWebPayload = Body(default=None)):
+        if body is None:
+            body = TdWebPayload()
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, _post_to_td_webserver, _td_web_url, body.payload, body.timeout
+        )
+        logger.info(
+            "TD webserver POST [%s] → %s",
+            _td_web_url,
+            "ok" if result["ok"] else f"error: {result.get('error')}",
+        )
+        return result
+
+    @app.get("/api/ollama/status")
+    async def get_ollama_status():
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _fetch_ollama_status, _ollama_url)
 
     @app.post("/api/signals/publish")
     async def publish_signal(payload: SignalPayload):

@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import URLError
 
 from fastapi.testclient import TestClient
 
@@ -243,3 +244,125 @@ def test_touchdesigner_run_example_endpoint():
             "POST /api/touchdesigner/run-example",
             f"status_code={response.status_code}, ok={body['ok']}, path={body['path']}",
         )
+
+
+def test_touchdesigner_send_test_data_endpoint_success():
+    class _StubResponse:
+        def __init__(self, body: str, status_code: int = 200):
+            self._body = body
+            self._status_code = status_code
+
+        def read(self):
+            return self._body.encode("utf-8")
+
+        def getcode(self):
+            return self._status_code
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with _build_client() as client:
+        with patch("comms_platform.web.app.urlopen", return_value=_StubResponse("ok")) as mocked_urlopen:
+            response = client.post("/api/touchdesigner/send-test-data")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status_code"] == 200
+    assert body["payload"] == {"test_key": "test_value"}
+    mocked_urlopen.assert_called_once()
+    _log_test(
+        "POST /api/touchdesigner/send-test-data [success]",
+        f"status_code={response.status_code}, ok={body['ok']}, target={body['target']}",
+    )
+
+
+def test_touchdesigner_send_test_data_endpoint_connection_error():
+    with _build_client() as client:
+        with patch("comms_platform.web.app.urlopen", side_effect=URLError("connection refused")):
+            response = client.post("/api/touchdesigner/send-test-data")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["payload"] == {"test_key": "test_value"}
+    _log_test(
+        "POST /api/touchdesigner/send-test-data [connection_error]",
+        f"status_code={response.status_code}, ok={body['ok']}, target={body['target']}",
+    )
+
+
+def test_touchdesigner_send_test_data_endpoint_custom_payload():
+    class _StubResponse:
+        def read(self): return b"ok"
+        def getcode(self): return 200
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+
+    with _build_client() as client:
+        with patch("comms_platform.web.app.urlopen", return_value=_StubResponse()):
+            response = client.post(
+                "/api/touchdesigner/send-test-data",
+                json={"payload": {"my_key": "my_value"}, "timeout": 3.0},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["payload"] == {"my_key": "my_value"}
+    _log_test(
+        "POST /api/touchdesigner/send-test-data [custom_payload]",
+        f"status_code={response.status_code}, ok={body['ok']}, payload={body['payload']}",
+    )
+
+
+def test_ollama_status_endpoint_success():
+    class _StubResponse:
+        def __init__(self, body: str, status_code: int = 200):
+            self._body = body
+            self._status_code = status_code
+
+        def read(self):
+            return self._body.encode("utf-8")
+
+        def getcode(self):
+            return self._status_code
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    mock_json = '{"models": [{"name": "llama3.2:latest"}]}'
+    with _build_client() as client:
+        with patch("comms_platform.web.app.urlopen", return_value=_StubResponse(mock_json)):
+            response = client.get("/api/ollama/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["models_count"] == 1
+    assert body["models"] == ["llama3.2:latest"]
+    _log_test(
+        "GET /api/ollama/status [success]",
+        f"status_code={response.status_code}, ok={body['ok']}, models_count={body['models_count']}",
+    )
+
+
+def test_ollama_status_endpoint_connection_error():
+    with _build_client() as client:
+        with patch("comms_platform.web.app.urlopen", side_effect=URLError("connection refused")):
+            response = client.get("/api/ollama/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["models_count"] == 0
+    _log_test(
+        "GET /api/ollama/status [connection_error]",
+        f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
+    )
