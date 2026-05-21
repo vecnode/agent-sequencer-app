@@ -132,6 +132,7 @@ main {
 
 #panel-dashboard {
   grid-template-rows: minmax(0, 1fr);
+  height: 100%;
 }
 
 #panel-incoming {
@@ -140,14 +141,23 @@ main {
 
 .dashboard-panel {
   border-bottom: none;
+  height: 100%;
+  min-height: 0;
+}
+
+.dashboard-panel .panel-body {
+  height: 100%;
+  min-height: 0;
 }
 
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(120px, auto)) minmax(0, 1fr);
   gap: 10px;
   padding: 10px;
+  height: 100%;
+  min-height: 0;
 }
 
 .dashboard-block {
@@ -196,16 +206,54 @@ main {
   grid-template-rows: auto 1fr;
   gap: 10px;
   padding: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.widget-user-input {
+  grid-column: 1 / span 2;
+  grid-row: 4;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 12px;
+  min-height: 0;
+}
+
+.widget-user-input-body {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.widget-input {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #0d0d0d;
+  color: var(--text);
 }
 
 .widget-terminal-body {
-  overflow-y: auto;
+  overflow-y: scroll;
+  overflow-x: auto;
   border: 1px solid var(--border);
   background: #0d0d0d;
   padding: 10px;
   color: var(--text);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 11px;
+  line-height: 1.45;
+  height: 100%;
+  min-height: 0;
 }
 
 .widget-terminal-body div,
@@ -240,6 +288,22 @@ main {
 .settings-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.widget-select {
+  width: 100%;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #0d0d0d;
+  color: var(--text);
+}
+
+.widget-select:disabled {
+  opacity: 0.6;
 }
 
 .widget-settings-status {
@@ -477,7 +541,7 @@ main {
 
   .dashboard-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: repeat(6, minmax(90px, 1fr));
+    grid-template-rows: repeat(5, minmax(110px, auto));
   }
 
   .widget-terminal {
@@ -488,9 +552,18 @@ main {
 
   .widget-agent,
   .widget-settings,
-  .widget-ollama {
+  .widget-ollama,
+  .widget-user-input {
     grid-column: auto;
     grid-row: auto;
+  }
+
+  .widget-user-input-body {
+    grid-template-columns: 1fr;
+  }
+
+  .widget-input {
+    min-height: 140px;
   }
 
   .message {

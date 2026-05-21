@@ -307,6 +307,29 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_ollama_status, _ollama_url)
 
+    @app.post("/api/ollama/open")
+    async def open_ollama_target():
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(_ollama_url)  # type: ignore[attr-defined]
+            elif os.name == "posix":
+                opener = "open" if Path("/usr/bin/open").exists() else "xdg-open"
+                subprocess.Popen([opener, _ollama_url])
+            else:
+                raise RuntimeError("Unsupported operating system for opening Ollama target")
+        except Exception as exc:
+            logger.exception("Failed to open Ollama target: %s", _ollama_url)
+            return {
+                "ok": False,
+                "target": _ollama_url,
+                "error": str(exc),
+            }
+
+        return {
+            "ok": True,
+            "target": _ollama_url,
+        }
+
     @app.post("/api/signals/publish")
     async def publish_signal(payload: SignalPayload):
         signal_gateway.publish_stream(

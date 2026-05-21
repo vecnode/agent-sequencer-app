@@ -24,7 +24,7 @@ uv run python -m comms_platform.main
 ```
 
 
-## Docker (Windows)
+## Docker (build)
 
 ```sh
 future
@@ -42,11 +42,28 @@ uv run pytest -q -s
 uv run pytest -q -s tests/test_api.py
 ```
 
-The API tests include:
-- `GET /health` — liveness endpoint, validates status and service name
-- `GET /api/status` — server active status, SSE clients, OSC in/out addresses
-- `POST /api/signals/publish` — stream publish accepted, gateway called with correct args
-- `POST /api/signals/send` (stream) — stream transport selected, publish_stream invoked
-- `POST /api/signals/send` (osc) — OSC transport selected, enqueue invoked, target address returned
+## API
+
+Current API endpoints:
+
+- `GET /` — serves the web UI
+- `GET /health` — liveness endpoint
+- `GET /api/status` — runtime status (SSE clients, OSC in/out, agent state)
+- `GET /api/ollama/status` — checks Ollama availability and lists models
+- `GET /events` — SSE stream for frontend realtime events/logs
+
+- `POST /api/agent/start` — starts agent coordinator
+- `POST /api/agent/stop` — stops agent coordinator
+- `POST /api/agent/broadcast/on` — enables agent broadcast
+- `POST /api/agent/broadcast/off` — disables agent broadcast
+
+- `POST /api/signals/publish` — publishes a stream signal to frontend/event bus
+- `POST /api/signals/send` — sends signal (OSC when `protocol=osc`, otherwise stream)
+
 - `POST /api/touchdesigner/run-example` — launches `touchdesigner/example1.toe`
+- `POST /api/touchdesigner/send-test-data` — sends JSON payload to TouchDesigner web server (`TD_WEB_HOST:TD_WEB_PORT`)
+
+- `POST /api/ollama/open` — opens configured Ollama target URL in default system handler
+
+API tests currently cover core and integration-safe routes (health/status, signals, agent controls, TouchDesigner/Ollama status/open).
 

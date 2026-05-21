@@ -67,12 +67,24 @@
             <div class="widget-title">Widget 05 · Ollama</div>
             <div class="widget-ollama-body">
               <button id="btn-check-ollama" class="agent-btn settings-btn" type="button">Check Ollama</button>
+              <button id="btn-open-ollama" class="agent-btn settings-btn" type="button">Open Ollama</button>
+              <label class="widget-settings-status" for="ollama-model-select">Model</label>
+              <select id="ollama-model-select" class="widget-select" disabled>
+                <option value="">No models loaded</option>
+              </select>
               <div class="widget-settings-status">
                 Ollama: <span id="ollama-status" class="agent-status-off">UNKNOWN</span>
               </div>
               <div class="widget-settings-status">
                 Models: <span id="ollama-model-count">0</span>
               </div>
+            </div>
+          </div>
+          <div class="dashboard-block widget-panel widget-user-input" aria-label="Widget user input">
+            <div class="widget-title">User Input</div>
+            <div class="widget-user-input-body">
+              <textarea id="user-input-text" class="widget-input" placeholder="Type your instruction or payload here..."></textarea>
+              <button id="btn-user-input-send" class="agent-btn settings-btn" type="button">Send</button>
             </div>
           </div>
         </div>
@@ -133,12 +145,14 @@
   const btnRunExampleToe = document.getElementById('btn-run-example-toe');
   const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
   const btnCheckOllama = document.getElementById('btn-check-ollama');
+  const btnOpenOllama = document.getElementById('btn-open-ollama');
   const agentStatus = document.getElementById('agent-status');
   const agentBroadcast = document.getElementById('agent-broadcast');
   const tdLaunchStatus = document.getElementById('td-launch-status');
   const tdSendStatus = document.getElementById('td-send-status');
   const ollamaStatus = document.getElementById('ollama-status');
   const ollamaModelCount = document.getElementById('ollama-model-count');
+  const ollamaModelSelect = document.getElementById('ollama-model-select');
   const terminalFeed = document.getElementById('terminal-feed');
   const tabs = document.querySelectorAll('.tab');
   const tabPanels = {
@@ -151,6 +165,18 @@
   const MAX_ROWS = 200;
   const TERMINAL_MAX_ROWS = 400;
 
+  function forceTerminalScroll() {
+    terminalFeed.scrollTop = terminalFeed.scrollHeight;
+    requestAnimationFrame(() => {
+      terminalFeed.scrollTop = terminalFeed.scrollHeight;
+    });
+  }
+
+  const terminalObserver = new MutationObserver(() => {
+    forceTerminalScroll();
+  });
+  terminalObserver.observe(terminalFeed, { childList: true });
+
   function pushTerminalLine(text, className = '') {
     const row = document.createElement('div');
     row.className = className ? `terminal-line ${className}` : 'terminal-line';
@@ -160,7 +186,7 @@
     while (terminalFeed.children.length > TERMINAL_MAX_ROWS) {
       terminalFeed.removeChild(terminalFeed.firstChild);
     }
-    terminalFeed.scrollTop = terminalFeed.scrollHeight;
+    forceTerminalScroll();
   }
 
   function setActiveTab(tabName) {
@@ -376,6 +402,26 @@
     ollamaModelCount.textContent = String(modelCount ?? 0);
   }
 
+  function populateOllamaModels(models) {
+    ollamaModelSelect.innerHTML = '';
+    if (!Array.isArray(models) || models.length === 0) {
+      ollamaModelSelect.disabled = true;
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No models loaded';
+      ollamaModelSelect.appendChild(option);
+      return;
+    }
+
+    ollamaModelSelect.disabled = false;
+    models.forEach((modelName) => {
+      const option = document.createElement('option');
+      option.value = String(modelName);
+      option.textContent = String(modelName);
+      ollamaModelSelect.appendChild(option);
+    });
+  }
+
   async function checkOllamaStatus() {
     btnCheckOllama.disabled = true;
     setOllamaStatus(false, 0);
@@ -385,6 +431,7 @@
       const json = await res.json();
       const isUp = Boolean(res.ok && json.ok);
       setOllamaStatus(isUp, json.models_count || 0);
+      populateOllamaModels(json.models || []);
       if (isUp) {
         pushTerminalLine(`[OLLAMA] ONLINE (${json.models_count || 0} models)`, 'terminal-log-info');
       } else {
@@ -392,9 +439,28 @@
       }
     } catch (err) {
       setOllamaStatus(false, 0);
+      populateOllamaModels([]);
       pushTerminalLine(`[OLLAMA] OFFLINE (${err})`, 'terminal-log-error');
     } finally {
       btnCheckOllama.disabled = false;
+    }
+  }
+
+  async function openOllama() {
+    btnOpenOllama.disabled = true;
+    pushTerminalLine('[OLLAMA] Opening Ollama target...', 'terminal-log-info');
+    try {
+      const res = await fetch('/api/ollama/open', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        pushTerminalLine(`[OLLAMA] Open request sent (${json.target})`, 'terminal-log-info');
+      } else {
+        pushTerminalLine(`[OLLAMA] ERROR opening target (${json.error || 'unknown error'})`, 'terminal-log-error');
+      }
+    } catch (err) {
+      pushTerminalLine(`[OLLAMA] ERROR opening target (${err})`, 'terminal-log-error');
+    } finally {
+      btnOpenOllama.disabled = false;
     }
   }
 
@@ -405,6 +471,9 @@
   btnRunExampleToe.addEventListener('click', runExampleToe);
   btnSendTdTestData.addEventListener('click', sendTdTestData);
   btnCheckOllama.addEventListener('click', checkOllamaStatus);
+  btnOpenOllama.addEventListener('click', openOllama);
+
+  checkOllamaStatus();
 </script>
 </body>
 </html>

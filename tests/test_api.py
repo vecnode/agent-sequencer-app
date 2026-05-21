@@ -366,3 +366,26 @@ def test_ollama_status_endpoint_connection_error():
         "GET /api/ollama/status [connection_error]",
         f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
     )
+
+
+def test_ollama_open_endpoint():
+    with _build_client() as client:
+        if hasattr(sys.modules["os"], "startfile"):
+            with patch("comms_platform.web.app.os.startfile") as mocked_startfile:
+                response = client.post("/api/ollama/open")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["ok"] is True
+            mocked_startfile.assert_called_once()
+        else:
+            with patch("comms_platform.web.app.subprocess.Popen") as mocked_popen:
+                response = client.post("/api/ollama/open")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["ok"] is True
+            mocked_popen.assert_called_once()
+
+    _log_test(
+        "POST /api/ollama/open",
+        f"status_code={response.status_code}, ok={body['ok']}, target={body['target']}",
+    )
