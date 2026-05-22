@@ -20,6 +20,7 @@ class StubAgentCoordinator:
         self._running = False
         self.heartbeat_count = 0
         self.broadcast_enabled = False
+        self._history_text_read: list[str] = []
 
     @property
     def is_running(self):
@@ -40,6 +41,14 @@ class StubAgentCoordinator:
     def set_broadcast(self, enabled: bool):
         self.broadcast_enabled = enabled
         return self.broadcast_enabled
+
+    @property
+    def history_text_read(self):
+        return list(self._history_text_read)
+
+    def handle_human_message(self, text: str):
+        self._history_text_read.append(text.strip())
+        return "ok."
 
 
 class StubSignalGateway:
@@ -78,7 +87,7 @@ def test_health_endpoint_returns_ok():
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "sequence-orchestrator"}
+    assert response.json() == {"status": "ok", "service": "communications-platform"}
     body = response.json()
     _log_test(
         "GET /health",
@@ -223,6 +232,21 @@ def test_agent_broadcast_on_and_off_endpoints():
         )
 
 
+def test_agent_message_endpoint_stores_history_and_returns_ok():
+    with _build_client() as client:
+        response = client.post("/api/agent/message", json={"text": "hello agent"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["reply"] == "ok."
+    assert body["history_size"] == 1
+    _log_test(
+        "POST /api/agent/message",
+        f"status_code={response.status_code}, reply={body['reply']}, history_size={body['history_size']}",
+    )
+
+
 def test_touchdesigner_run_example_endpoint():
     with _build_client() as client:
         if hasattr(sys.modules["os"], "startfile"):
@@ -319,6 +343,32 @@ def test_touchdesigner_send_test_data_endpoint_custom_payload():
     )
 
 
+def test_touchdesigner_processes_endpoint_reports_running_processes():
+    mock_payload = {
+        "ok": True,
+        "running": True,
+        "count": 2,
+        "processes": [
+            {"name": "TouchDesigner.exe", "pid": "1200"},
+            {"name": "TouchDesigner.exe", "pid": "1301"},
+        ],
+    }
+    with _build_client() as client:
+        with patch("comms_platform.web.app._list_touchdesigner_processes", return_value=mock_payload):
+            response = client.get("/api/touchdesigner/processes")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["running"] is True
+    assert body["count"] == 2
+    assert len(body["processes"]) == 2
+    _log_test(
+        "GET /api/touchdesigner/processes",
+        f"status_code={response.status_code}, running={body['running']}, count={body['count']}",
+    )
+
+
 def test_ollama_status_endpoint_success():
     class _StubResponse:
         def __init__(self, body: str, status_code: int = 200):
@@ -365,27 +415,4 @@ def test_ollama_status_endpoint_connection_error():
     _log_test(
         "GET /api/ollama/status [connection_error]",
         f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
-    )
-
-
-def test_ollama_open_endpoint():
-    with _build_client() as client:
-        if hasattr(sys.modules["os"], "startfile"):
-            with patch("comms_platform.web.app.os.startfile") as mocked_startfile:
-                response = client.post("/api/ollama/open")
-            assert response.status_code == 200
-            body = response.json()
-            assert body["ok"] is True
-            mocked_startfile.assert_called_once()
-        else:
-            with patch("comms_platform.web.app.subprocess.Popen") as mocked_popen:
-                response = client.post("/api/ollama/open")
-            assert response.status_code == 200
-            body = response.json()
-            assert body["ok"] is True
-            mocked_popen.assert_called_once()
-
-    _log_test(
-        "POST /api/ollama/open",
-        f"status_code={response.status_code}, ok={body['ok']}, target={body['target']}",
     )

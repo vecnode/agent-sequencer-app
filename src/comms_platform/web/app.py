@@ -1,4 +1,6 @@
 import asyncio
+import csv
+import io
 import json
 import logging
 import os
@@ -105,6 +107,10 @@ class TdWebPayload(BaseModel):
     timeout: float = Field(default=5.0, gt=0, le=30)
 
 
+class AgentMessagePayload(BaseModel):
+    text: str = Field(min_length=1)
+
+
 def _post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
     """Synchronous POST to a TouchDesigner Web Server DAT. Must run in a thread executor."""
     payload_bytes = json.dumps(payload).encode("utf-8")
@@ -164,6 +170,62 @@ def _fetch_ollama_status(base_url: str, timeout: float = 3.0) -> dict:
         }
 
 
+def _list_touchdesigner_processes() -> dict:
+    try:
+        processes: list[dict[str, str]] = []
+
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "tasklist command failed")
+
+            for row in csv.reader(io.StringIO(result.stdout)):
+                if len(row) < 2:
+                    continue
+                name = row[0].strip()
+                pid = row[1].strip()
+                if "touchdesigner" in name.lower():
+                    processes.append({"name": name, "pid": pid})
+        else:
+            result = subprocess.run(
+                ["ps", "-axo", "pid=,comm=,args="],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "ps command failed")
+
+            for line in result.stdout.splitlines():
+                parts = line.strip().split(maxsplit=2)
+                if len(parts) < 3:
+                    continue
+                pid, command, args = parts
+                haystack = f"{command} {args}".lower()
+                if "touchdesigner" in haystack:
+                    processes.append({"name": command, "pid": pid})
+
+        return {
+            "ok": True,
+            "running": len(processes) > 0,
+            "count": len(processes),
+            "processes": processes,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "running": False,
+            "count": 0,
+            "processes": [],
+            "error": str(exc),
+        }
+
+
 def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordinator, config=None) -> FastAPI:
     _td_web_host = getattr(config, "TD_WEB_HOST", None) or _TD_WEB_DEFAULT_HOST
     _td_web_port = getattr(config, "TD_WEB_PORT", None) or _TD_WEB_DEFAULT_PORT
@@ -190,7 +252,7 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
         root_logger.removeHandler(event_log_handler)
 
     app = FastAPI(
-        title="sequence-orchestrator",
+        title="communications-platform",
         version="0.1.0",
         docs_url=None,
         redoc_url=None,
@@ -206,7 +268,7 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "service": "sequence-orchestrator"}
+        return {"status": "ok", "service": "communications-platform"}
 
     @app.get("/api/status")
     async def api_status():
@@ -256,6 +318,15 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
             "running": agent_coordinator.is_running,
         }
 
+    @app.post("/api/agent/message")
+    async def send_agent_message(payload: AgentMessagePayload):
+        reply = agent_coordinator.handle_human_message(payload.text)
+        return {
+            "ok": True,
+            "reply": reply,
+            "history_size": len(agent_coordinator.history_text_read),
+        }
+
     @app.post("/api/touchdesigner/run-example")
     async def run_touchdesigner_example():
         toe_path = EXAMPLE_TOE_PATH.resolve()
@@ -302,33 +373,15 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
         )
         return result
 
+    @app.get("/api/touchdesigner/processes")
+    async def list_touchdesigner_processes():
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _list_touchdesigner_processes)
+
     @app.get("/api/ollama/status")
     async def get_ollama_status():
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_ollama_status, _ollama_url)
-
-    @app.post("/api/ollama/open")
-    async def open_ollama_target():
-        try:
-            if hasattr(os, "startfile"):
-                os.startfile(_ollama_url)  # type: ignore[attr-defined]
-            elif os.name == "posix":
-                opener = "open" if Path("/usr/bin/open").exists() else "xdg-open"
-                subprocess.Popen([opener, _ollama_url])
-            else:
-                raise RuntimeError("Unsupported operating system for opening Ollama target")
-        except Exception as exc:
-            logger.exception("Failed to open Ollama target: %s", _ollama_url)
-            return {
-                "ok": False,
-                "target": _ollama_url,
-                "error": str(exc),
-            }
-
-        return {
-            "ok": True,
-            "target": _ollama_url,
-        }
 
     @app.post("/api/signals/publish")
     async def publish_signal(payload: SignalPayload):

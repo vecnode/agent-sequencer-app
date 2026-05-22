@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>sequence-orchestrator</title>
+  <title>Comms Platform</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
 <div class="layout">
 
   <header>
-    <h1>sequence-orchestrator</h1>
+    <h1>Comms Platform</h1>
     <span class="sep">|</span>
     <span class="badge">
       <span class="dot" id="dot"></span>
@@ -29,7 +29,7 @@
 
         <div class="panel-body dashboard-grid">
           <div class="dashboard-block widget-panel widget-agent">
-            <div class="widget-title">Widget 01 · Agent Coordinator</div>
+            <div class="widget-title">Widget 01 · Agent</div>
             <div class="widget-agent-controls">
               <button id="btn-agent-on" class="agent-btn agent-btn-on" type="button">Agent ON</button>
               <button id="btn-agent-off" class="agent-btn agent-btn-off" type="button">Agent OFF</button>
@@ -47,13 +47,16 @@
           <div class="dashboard-block widget-panel widget-terminal" aria-label="Widget terminal">
             <div class="widget-title">Widget 02 · Terminal Output</div>
             <div id="terminal-feed" class="widget-terminal-body">
-              <div class="terminal-line">&gt; Waiting for backend logs and stream messages...</div>
+              <div class="terminal-line terminal-log-system">&gt; Waiting for backend logs and stream messages...</div>
             </div>
           </div>
           <div class="dashboard-block widget-panel widget-settings" aria-label="Widget settings">
             <div class="widget-title">Widget 03 · Settings</div>
             <div class="widget-settings-body">
-              <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Run example1.toe</button>
+              <div class="td-actions">
+                <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Open TD Project</button>
+                <button id="btn-check-td" class="agent-btn settings-btn" type="button">Check TD</button>
+              </div>
               <div class="widget-settings-status">
                 TouchDesigner: <span id="td-launch-status" class="agent-status-off">IDLE</span>
               </div>
@@ -67,7 +70,6 @@
             <div class="widget-title">Widget 05 · Ollama</div>
             <div class="widget-ollama-body">
               <button id="btn-check-ollama" class="agent-btn settings-btn" type="button">Check Ollama</button>
-              <button id="btn-open-ollama" class="agent-btn settings-btn" type="button">Open Ollama</button>
               <label class="widget-settings-status" for="ollama-model-select">Model</label>
               <select id="ollama-model-select" class="widget-select" disabled>
                 <option value="">No models loaded</option>
@@ -143,9 +145,11 @@
   const btnBroadcastOn = document.getElementById('btn-broadcast-on');
   const btnBroadcastOff = document.getElementById('btn-broadcast-off');
   const btnRunExampleToe = document.getElementById('btn-run-example-toe');
+  const btnCheckTd = document.getElementById('btn-check-td');
   const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
   const btnCheckOllama = document.getElementById('btn-check-ollama');
-  const btnOpenOllama = document.getElementById('btn-open-ollama');
+  const userInputText = document.getElementById('user-input-text');
+  const btnUserInputSend = document.getElementById('btn-user-input-send');
   const agentStatus = document.getElementById('agent-status');
   const agentBroadcast = document.getElementById('agent-broadcast');
   const tdLaunchStatus = document.getElementById('td-launch-status');
@@ -177,9 +181,24 @@
   });
   terminalObserver.observe(terminalFeed, { childList: true });
 
+  function inferTerminalTagClass(text) {
+    const normalized = String(text || '').trim();
+    if (normalized.startsWith('>')) return 'terminal-log-system';
+    if (normalized.startsWith('[OLLAMA]')) return 'terminal-log-ollama';
+    if (normalized.startsWith('[HUMAN]')) return 'terminal-log-human';
+    if (normalized.startsWith('[AGENT]')) return 'terminal-log-agent';
+    if (normalized.startsWith('[TD]')) return 'terminal-log-td';
+    if (normalized.startsWith('[STREAM]')) return 'terminal-log-stream';
+    return '';
+  }
+
   function pushTerminalLine(text, className = '') {
     const row = document.createElement('div');
-    row.className = className ? `terminal-line ${className}` : 'terminal-line';
+    const inferredClass = inferTerminalTagClass(text);
+    const classes = ['terminal-line'];
+    if (className) classes.push(className);
+    if (inferredClass && inferredClass !== className) classes.push(inferredClass);
+    row.className = classes.join(' ');
     row.textContent = text;
     terminalFeed.appendChild(row);
 
@@ -370,6 +389,35 @@
     }
   }
 
+  async function checkTdProcesses() {
+    btnCheckTd.disabled = true;
+    pushTerminalLine('[TD] Checking for running TouchDesigner processes...', 'terminal-log-info');
+    try {
+      const res = await fetch('/api/touchdesigner/processes');
+      const json = await res.json();
+      if (!(res.ok && json.ok)) {
+        pushTerminalLine(`[TD] ERROR checking processes (${json.error || 'request failed'})`, 'terminal-log-error');
+        return;
+      }
+
+      if (!json.running || !Array.isArray(json.processes) || json.processes.length === 0) {
+        pushTerminalLine('[TD] No TouchDesigner process is currently running', 'terminal-log-warning');
+        return;
+      }
+
+      pushTerminalLine(`[TD] Found ${json.count} TouchDesigner process(es):`, 'terminal-log-info');
+      json.processes.forEach((processInfo) => {
+        const name = processInfo.name || 'unknown';
+        const pid = processInfo.pid || 'n/a';
+        pushTerminalLine(`[TD] - ${name} (PID ${pid})`, 'terminal-log-info');
+      });
+    } catch (err) {
+      pushTerminalLine(`[TD] ERROR checking processes (${err})`, 'terminal-log-error');
+    } finally {
+      btnCheckTd.disabled = false;
+    }
+  }
+
   function setTdSendStatus(state, klass) {
     tdSendStatus.textContent = state;
     tdSendStatus.className = klass;
@@ -446,21 +494,35 @@
     }
   }
 
-  async function openOllama() {
-    btnOpenOllama.disabled = true;
-    pushTerminalLine('[OLLAMA] Opening Ollama target...', 'terminal-log-info');
+  async function sendUserInputToAgent() {
+    const text = userInputText.value.trim();
+    if (!text) {
+      return;
+    }
+
+    btnUserInputSend.disabled = true;
+    userInputText.disabled = true;
+    pushTerminalLine(`[HUMAN] ${text}`, 'terminal-log-info');
+
     try {
-      const res = await fetch('/api/ollama/open', { method: 'POST' });
+      const res = await fetch('/api/agent/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
       const json = await res.json();
       if (res.ok && json.ok) {
-        pushTerminalLine(`[OLLAMA] Open request sent (${json.target})`, 'terminal-log-info');
+        pushTerminalLine(`[AGENT] ${json.reply}`, 'terminal-log-info');
+        userInputText.value = '';
       } else {
-        pushTerminalLine(`[OLLAMA] ERROR opening target (${json.error || 'unknown error'})`, 'terminal-log-error');
+        pushTerminalLine(`[AGENT] ERROR (${json.error || 'request failed'})`, 'terminal-log-error');
       }
     } catch (err) {
-      pushTerminalLine(`[OLLAMA] ERROR opening target (${err})`, 'terminal-log-error');
+      pushTerminalLine(`[AGENT] ERROR (${err})`, 'terminal-log-error');
     } finally {
-      btnOpenOllama.disabled = false;
+      userInputText.disabled = false;
+      btnUserInputSend.disabled = false;
+      userInputText.focus();
     }
   }
 
@@ -469,9 +531,16 @@
   btnBroadcastOn.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/on'));
   btnBroadcastOff.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/off'));
   btnRunExampleToe.addEventListener('click', runExampleToe);
+  btnCheckTd.addEventListener('click', checkTdProcesses);
   btnSendTdTestData.addEventListener('click', sendTdTestData);
   btnCheckOllama.addEventListener('click', checkOllamaStatus);
-  btnOpenOllama.addEventListener('click', openOllama);
+  btnUserInputSend.addEventListener('click', sendUserInputToAgent);
+  userInputText.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendUserInputToAgent();
+    }
+  });
 
   checkOllamaStatus();
 </script>

@@ -25,7 +25,7 @@ if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%
 if not defined chrome_exe if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
 if not defined chrome_exe for %%I in (chrome.exe) do set "chrome_exe=%%~$PATH:I"
 
-start "Montage Platform" cmd /k "cd /d ""%~dp0"" && uv run python -m comms_platform.main"
+start "Comms Platform" cmd /k "cd /d ""%~dp0"" && uv run python -m comms_platform.main"
 
 if defined chrome_exe (
 	start "" "%chrome_exe%" "%platform_url%"

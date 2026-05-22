@@ -1,7 +1,7 @@
 [project]
 
-name = "sequence-orchestrator"
-description = "sequence-orchestrator"
+name = "comms-platform"
+description = "Professional multimodal communications platform for agent orchestration"
 version = "0.1.0"
 requires-python = ">=3.9"
 

@@ -1,4 +1,4 @@
-# Entry point for the sequence-orchestrator platform
+# Entry point for the communications platform
 
 import asyncio
 
@@ -23,7 +23,7 @@ async def main():
 
     app = create_app(event_bus, thread_manager, td_sender, agent_coordinator, config)
 
-    logger.info(f"Starting Sequence Orchestrator Platform → http://{config.WEB_HOST}:{config.WEB_PORT}")
+    logger.info(f"Starting Communications Platform -> http://{config.WEB_HOST}:{config.WEB_PORT}")
 
     server_config = uvicorn.Config(
         app,

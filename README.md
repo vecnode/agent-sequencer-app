@@ -1,8 +1,8 @@
-# agent-sequencer-app
+# Communications Platform
 
 Under development. 
 
-This repository has the template to start building sequencer LLM agents (SLLMA). SLLMAs are agents able to execute tools but coordinate them for multimodal generation.
+This repository is the foundation for a professional multimodal communications platform. The system coordinates tool-enabled agents for robust signal routing, orchestration, and realtime monitoring.
 
 Coordination is mandatory for critical environments.
 
@@ -23,13 +23,6 @@ uv pip install -e .
 uv run python -m comms_platform.main
 ```
 
-
-## Docker (build)
-
-```sh
-future
-```
-
 ## Testing
 
 Run API tests with uv:
@@ -41,6 +34,14 @@ uv run pytest -q -s
 # Run only API tests
 uv run pytest -q -s tests/test_api.py
 ```
+
+
+## Docker (build)
+
+```sh
+future
+```
+
 
 ## API
 
@@ -56,14 +57,15 @@ Current API endpoints:
 - `POST /api/agent/stop` — stops agent coordinator
 - `POST /api/agent/broadcast/on` — enables agent broadcast
 - `POST /api/agent/broadcast/off` — disables agent broadcast
+- `POST /api/agent/message` — sends human text to the agent, appends to history, and returns current reply
 
 - `POST /api/signals/publish` — publishes a stream signal to frontend/event bus
 - `POST /api/signals/send` — sends signal (OSC when `protocol=osc`, otherwise stream)
 
 - `POST /api/touchdesigner/run-example` — launches `touchdesigner/example1.toe`
 - `POST /api/touchdesigner/send-test-data` — sends JSON payload to TouchDesigner web server (`TD_WEB_HOST:TD_WEB_PORT`)
+- `GET /api/touchdesigner/processes` — lists running TouchDesigner processes on this machine
 
-- `POST /api/ollama/open` — opens configured Ollama target URL in default system handler
 
 API tests currently cover core and integration-safe routes (health/status, signals, agent controls, TouchDesigner/Ollama status/open).
 

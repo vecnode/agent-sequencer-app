@@ -15,6 +15,7 @@ class AgentCoordinator:
         self._lock = threading.Lock()
         self._heartbeat_count = 0
         self._broadcast_enabled = False
+        self._history_text_read: list[str] = []
 
     def start(self) -> bool:
         """Start the agent loop. Returns False when already running."""
@@ -71,6 +72,17 @@ class AgentCoordinator:
         with self._lock:
             self._broadcast_enabled = enabled
             return self._broadcast_enabled
+
+    @property
+    def history_text_read(self) -> list[str]:
+        with self._lock:
+            return list(self._history_text_read)
+
+    def handle_human_message(self, text: str) -> str:
+        clean_text = text.strip()
+        with self._lock:
+            self._history_text_read.append(clean_text)
+        return "ok."
 
     def _run(self, stop_event: threading.Event) -> None:
         while not stop_event.wait(1.0):
