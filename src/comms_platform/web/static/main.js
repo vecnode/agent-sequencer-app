@@ -19,6 +19,8 @@ const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
 const btnCheckOllama = document.getElementById('btn-check-ollama');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
+const agentStateSectionSelect = document.getElementById('agent-state-section');
+const agentStateView = document.getElementById('agent-state-view');
 const agentStatus = document.getElementById('agent-status');
 const agentBroadcast = document.getElementById('agent-broadcast');
 const tdLaunchStatus = document.getElementById('td-launch-status');
@@ -37,6 +39,39 @@ const tabPanels = {
 	incoming: document.getElementById('panel-incoming'),
 };
 
+// Frontend state projection of the agent/runtime surface known by this UI.
+const agentState = {
+	agent: {
+		is_running: false,
+		broadcast_enabled: false,
+		last_action: null,
+	},
+	stream: {
+		paused: false,
+		message_count: 0,
+		osc_input: null,
+		osc_output: null,
+		last_message: null,
+	},
+	connections: {
+		sse_status: null,
+		sse_clients: null,
+	},
+	touchdesigner: {
+		launch_status: 'IDLE',
+		send_status: 'IDLE',
+	},
+	ollama: {
+		status: 'UNKNOWN',
+		models_count: 0,
+		selected_model: null,
+	},
+	ui: {
+		theme: 'light',
+		active_tab: 'dashboard',
+	},
+};
+
 // Runtime UI state
 let count   = 0;
 let paused  = false;
@@ -45,6 +80,24 @@ let broadcastEnabled = false;
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
 const THEME_STORAGE_KEY = 'comms-platform-theme';
+
+function renderAgentState() {
+	if (!agentStateView) return;
+	const scope = agentStateSectionSelect ? agentStateSectionSelect.value : 'all';
+	const scopedState = scope === 'all' ? agentState : { [scope]: agentState[scope] };
+	agentStateView.textContent = JSON.stringify(scopedState, null, 2);
+}
+
+if (agentStateSectionSelect) {
+	agentStateSectionSelect.addEventListener('change', renderAgentState);
+}
+
+if (ollamaModelSelect) {
+	ollamaModelSelect.addEventListener('change', () => {
+		agentState.ollama.selected_model = ollamaModelSelect.value || null;
+		renderAgentState();
+	});
+}
 
 // Theme dropdown helpers
 function closeThemeDropdown() {
@@ -63,6 +116,7 @@ function applyTheme(themeName) {
 	document.documentElement.setAttribute('data-theme', normalizedTheme);
 	document.body.setAttribute('data-theme', normalizedTheme);
 	document.documentElement.style.colorScheme = normalizedTheme;
+	agentState.ui.theme = normalizedTheme;
 	themeCurrentLabel.textContent = normalizedTheme === 'light' ? 'Light' : 'Dark';
 	themeOptions.forEach((option) => {
 		const isActive = option.dataset.theme === normalizedTheme;
@@ -72,6 +126,7 @@ function applyTheme(themeName) {
 	try {
 		localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
 	} catch (_) {}
+	renderAgentState();
 }
 
 // Returns saved theme; defaults to light for first-time users.
@@ -160,12 +215,14 @@ function pushTerminalLine(text, className = '') {
 
 // Tab navigation controller.
 function setActiveTab(tabName) {
+	agentState.ui.active_tab = tabName;
 	tabs.forEach((tab) => {
 		tab.classList.toggle('active', tab.dataset.tab === tabName);
 	});
 	Object.entries(tabPanels).forEach(([key, panel]) => {
 		panel.classList.toggle('active', key === tabName);
 	});
+	renderAgentState();
 }
 
 tabs.forEach((tab) => {
@@ -182,10 +239,14 @@ async function pollStatus() {
 		statClients.textContent = json.sse_clients;
 		statOscIn.textContent = json.osc_input;
 		statOscOut.textContent = json.osc_output;
+		agentState.connections.sse_clients = json.sse_clients;
+		agentState.stream.osc_input = json.osc_input;
+		agentState.stream.osc_output = json.osc_output;
 		setAgentUi(
 			Boolean(json.agent_running),
 			Boolean(json.agent_broadcast)
 		);
+		renderAgentState();
 	} catch (_) {}
 }
 pollStatus();
@@ -198,11 +259,15 @@ function connect() {
 	source.onopen = () => {
 		dot.className       = 'dot connected';
 		connLabel.textContent = 'connected';
+		agentState.connections.sse_status = 'connected';
+		renderAgentState();
 	};
 
 	source.onerror = () => {
 		dot.className       = 'dot disconnected';
 		connLabel.textContent = 'reconnecting…';
+		agentState.connections.sse_status = 'reconnecting';
+		renderAgentState();
 	};
 
 	source.onmessage = (e) => {
@@ -228,6 +293,13 @@ function connect() {
 
 		count++;
 		statCount.textContent = count;
+		agentState.stream.message_count = count;
+		agentState.stream.last_message = {
+			address: data.address || null,
+			source: data.source || null,
+			protocol: data.protocol || null,
+			direction: data.direction || null,
+		};
 
 		if (empty.parentNode === feed) feed.removeChild(empty);
 
@@ -255,6 +327,7 @@ function connect() {
 		while (feed.children.length > MAX_ROWS) {
 			feed.removeChild(feed.lastChild);
 		}
+		renderAgentState();
 	};
 }
 
@@ -271,9 +344,11 @@ document.getElementById('btn-clear').addEventListener('click', () => {
 const btnPause = document.getElementById('btn-pause');
 btnPause.addEventListener('click', () => {
 	paused = !paused;
+	agentState.stream.paused = paused;
 	btnPause.textContent     = paused ? 'resume' : 'pause';
 	btnPause.style.borderColor = paused ? 'var(--accent)' : '';
 	btnPause.style.color       = paused ? 'var(--accent)' : '';
+	renderAgentState();
 });
 
 // Escapes HTML before writing user-facing stream payloads.
@@ -288,6 +363,8 @@ function escHtml(str) {
 function setAgentUi(isRunning, isBroadcastEnabled) {
 	agentRunning = isRunning;
 	broadcastEnabled = isBroadcastEnabled;
+	agentState.agent.is_running = isRunning;
+	agentState.agent.broadcast_enabled = isBroadcastEnabled;
 	agentStatus.textContent = isRunning ? 'ON' : 'OFF';
 	agentStatus.className = isRunning ? 'agent-status-on' : 'agent-status-off';
 	agentBroadcast.textContent = isBroadcastEnabled ? 'ON' : 'OFF';
@@ -302,12 +379,15 @@ function setAgentUi(isRunning, isBroadcastEnabled) {
 	btnBroadcastToggle.classList.toggle('agent-btn-off', !isBroadcastEnabled);
 	btnBroadcastToggle.setAttribute('aria-pressed', String(isBroadcastEnabled));
 	btnBroadcastToggle.disabled = false;
+	renderAgentState();
 }
 
 // Single Agent toggle: decides whether to call start or stop endpoint.
 async function toggleAgent() {
 	btnAgentToggle.disabled = true;
 	const url = agentRunning ? '/api/agent/stop' : '/api/agent/start';
+	agentState.agent.last_action = agentRunning ? 'stop_requested' : 'start_requested';
+	renderAgentState();
 	try {
 		await fetch(url, { method: 'POST' });
 		await pollStatus();
@@ -321,6 +401,8 @@ async function toggleBroadcast() {
 	btnBroadcastToggle.disabled = true;
 	const nextEnabled = !broadcastEnabled;
 	const url = nextEnabled ? '/api/agent/broadcast/on' : '/api/agent/broadcast/off';
+	agentState.agent.last_action = nextEnabled ? 'broadcast_on_requested' : 'broadcast_off_requested';
+	renderAgentState();
 	try {
 		const response = await fetch(url, { method: 'POST' });
 		if (response.ok) {
@@ -341,6 +423,8 @@ async function toggleBroadcast() {
 function setTdLaunchStatus(state, klass) {
 	tdLaunchStatus.textContent = state;
 	tdLaunchStatus.className = klass;
+	agentState.touchdesigner.launch_status = state;
+	renderAgentState();
 }
 
 // Launches the bundled TouchDesigner project.
@@ -396,6 +480,8 @@ async function checkTdProcesses() {
 function setTdSendStatus(state, klass) {
 	tdSendStatus.textContent = state;
 	tdSendStatus.className = klass;
+	agentState.touchdesigner.send_status = state;
+	renderAgentState();
 }
 
 // Sends a test payload to TouchDesigner web endpoint.
@@ -424,6 +510,9 @@ function setOllamaStatus(isUp, modelCount) {
 	ollamaStatus.textContent = isUp ? 'ONLINE' : 'OFFLINE';
 	ollamaStatus.className = isUp ? 'agent-status-on' : 'agent-status-off';
 	ollamaModelCount.textContent = String(modelCount ?? 0);
+	agentState.ollama.status = isUp ? 'ONLINE' : 'OFFLINE';
+	agentState.ollama.models_count = modelCount ?? 0;
+	renderAgentState();
 }
 
 // Populates the model selector from /api/ollama/status response.
@@ -445,6 +534,8 @@ function populateOllamaModels(models) {
 		option.textContent = String(modelName);
 		ollamaModelSelect.appendChild(option);
 	});
+	agentState.ollama.selected_model = ollamaModelSelect.value || null;
+	renderAgentState();
 }
 
 // Checks Ollama health and updates status + model list.
@@ -518,6 +609,8 @@ userInputText.addEventListener('keydown', (e) => {
 		sendUserInputToAgent();
 	}
 });
+
+renderAgentState();
 
 // Initial Ollama status probe on page load.
 checkOllamaStatus();

@@ -62,7 +62,7 @@
             <div class="widget-title">Widget 03 · Settings</div>
             <div class="widget-settings-body">
               <div class="td-actions">
-                <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Open TD Project</button>
+                <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Open TD</button>
                 <button id="btn-check-td" class="agent-btn settings-btn" type="button">Check TD</button>
               </div>
               <div class="widget-settings-status">
@@ -96,6 +96,22 @@
               <textarea id="user-input-text" class="widget-input" placeholder="Type your instruction or payload here..."></textarea>
               <button id="btn-user-input-send" class="agent-btn settings-btn" type="button">Send</button>
             </div>
+          </div>
+          <div class="dashboard-block widget-panel widget-agent-state" aria-label="Agent state inspector">
+            <div class="widget-title">Agent State</div>
+            <div class="widget-agent-state-toolbar">
+              <label class="widget-settings-status" for="agent-state-section">Scope</label>
+              <select id="agent-state-section" class="widget-select" aria-label="Agent state scope">
+                <option value="all">All</option>
+                <option value="agent">Agent</option>
+                <option value="stream">Stream</option>
+                <option value="connections">Connections</option>
+                <option value="touchdesigner">TouchDesigner</option>
+                <option value="ollama">Ollama</option>
+                <option value="ui">UI</option>
+              </select>
+            </div>
+            <pre id="agent-state-view" class="widget-agent-state-view">{}</pre>
           </div>
         </div>
       </section>
