@@ -1,3 +1,7 @@
+"""
+Copyright (c) vecnode 2026
+"""
+
 # Entry point for the communications platform
 
 import asyncio

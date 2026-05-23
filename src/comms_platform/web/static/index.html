@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Comms Platform</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
-<body>
+<body data-theme="light">
 <div class="layout">
 
   <header>
@@ -41,8 +41,7 @@
           <div class="dashboard-block widget-panel widget-agent">
             <div class="widget-title">Widget 01 · Agent</div>
             <div class="widget-agent-controls">
-              <button id="btn-agent-on" class="agent-btn agent-btn-on" type="button">Agent ON</button>
-              <button id="btn-agent-off" class="agent-btn agent-btn-off" type="button">Agent OFF</button>
+              <button id="btn-agent-toggle" class="agent-btn agent-btn-off" type="button" aria-pressed="false">Agent OFF</button>
             </div>
             <div class="widget-agent-controls widget-agent-controls-secondary">
               <button id="btn-broadcast-on" class="agent-btn" type="button">Broadcast ON</button>

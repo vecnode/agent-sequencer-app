@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) vecnode 2026
+ */
+
+// DOM references
 const feed      = document.getElementById('feed');
 const empty     = document.getElementById('empty');
 const dot       = document.getElementById('dot');
@@ -6,8 +11,7 @@ const statCount = document.getElementById('stat-count');
 const statOscIn = document.getElementById('stat-osc-in');
 const statOscOut = document.getElementById('stat-osc-out');
 const statClients = document.getElementById('stat-clients');
-const btnAgentOn = document.getElementById('btn-agent-on');
-const btnAgentOff = document.getElementById('btn-agent-off');
+const btnAgentToggle = document.getElementById('btn-agent-toggle');
 const btnBroadcastOn = document.getElementById('btn-broadcast-on');
 const btnBroadcastOff = document.getElementById('btn-broadcast-off');
 const btnRunExampleToe = document.getElementById('btn-run-example-toe');
@@ -34,12 +38,15 @@ const tabPanels = {
 	incoming: document.getElementById('panel-incoming'),
 };
 
+// Runtime UI state
 let count   = 0;
 let paused  = false;
+let agentRunning = false;
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
 const THEME_STORAGE_KEY = 'comms-platform-theme';
 
+// Theme dropdown helpers
 function closeThemeDropdown() {
 	themeDropdown.hidden = true;
 	themeToggle.setAttribute('aria-expanded', 'false');
@@ -50,6 +57,7 @@ function openThemeDropdown() {
 	themeToggle.setAttribute('aria-expanded', 'true');
 }
 
+// Applies the selected theme to both html/body and persists it.
 function applyTheme(themeName) {
 	const normalizedTheme = themeName === 'light' ? 'light' : 'dark';
 	document.documentElement.setAttribute('data-theme', normalizedTheme);
@@ -66,12 +74,13 @@ function applyTheme(themeName) {
 	} catch (_) {}
 }
 
+// Returns saved theme; defaults to light for first-time users.
 function getSavedTheme() {
 	try {
 		const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-		return storedTheme === 'light' ? 'light' : 'dark';
+		return storedTheme === 'dark' ? 'dark' : 'light';
 	} catch (_) {
-		return 'dark';
+		return 'light';
 	}
 }
 
@@ -104,8 +113,10 @@ document.addEventListener('keydown', (event) => {
 	}
 });
 
+// Initialize theme on load.
 applyTheme(getSavedTheme());
 
+// Keeps the terminal panel scrolled to latest output.
 function forceTerminalScroll() {
 	terminalFeed.scrollTop = terminalFeed.scrollHeight;
 	requestAnimationFrame(() => {
@@ -118,6 +129,7 @@ const terminalObserver = new MutationObserver(() => {
 });
 terminalObserver.observe(terminalFeed, { childList: true });
 
+// Maps log prefixes to terminal color classes.
 function inferTerminalTagClass(text) {
 	const normalized = String(text || '').trim();
 	if (normalized.startsWith('>')) return 'terminal-log-system';
@@ -129,6 +141,7 @@ function inferTerminalTagClass(text) {
 	return '';
 }
 
+// Adds one terminal line and trims history to protect UI performance.
 function pushTerminalLine(text, className = '') {
 	const row = document.createElement('div');
 	const inferredClass = inferTerminalTagClass(text);
@@ -145,6 +158,7 @@ function pushTerminalLine(text, className = '') {
 	forceTerminalScroll();
 }
 
+// Tab navigation controller.
 function setActiveTab(tabName) {
 	tabs.forEach((tab) => {
 		tab.classList.toggle('active', tab.dataset.tab === tabName);
@@ -160,7 +174,7 @@ tabs.forEach((tab) => {
 	});
 });
 
-// ── Status polling ──────────────────────────────────────────────
+// Polls backend status and reflects it in the top-level dashboard controls.
 async function pollStatus() {
 	try {
 		const res  = await fetch('/api/status');
@@ -177,7 +191,7 @@ async function pollStatus() {
 pollStatus();
 setInterval(pollStatus, 1000);
 
-// ── SSE ─────────────────────────────────────────────────────────
+// Opens SSE stream and renders log/stream messages in the incoming feed.
 function connect() {
 	const source = new EventSource('/events');
 
@@ -246,7 +260,7 @@ function connect() {
 
 connect();
 
-// ── Controls ────────────────────────────────────────────────────
+// General toolbar controls.
 document.getElementById('btn-clear').addEventListener('click', () => {
 	feed.innerHTML = '';
 	feed.appendChild(empty);
@@ -262,6 +276,7 @@ btnPause.addEventListener('click', () => {
 	btnPause.style.color       = paused ? 'var(--accent)' : '';
 });
 
+// Escapes HTML before writing user-facing stream payloads.
 function escHtml(str) {
 	return String(str)
 		.replace(/&/g, '&amp;')
@@ -269,20 +284,26 @@ function escHtml(str) {
 		.replace(/>/g, '&gt;');
 }
 
+// Updates Agent/Broadcast visual state from backend status.
 function setAgentUi(isRunning, isBroadcastEnabled) {
+	agentRunning = isRunning;
 	agentStatus.textContent = isRunning ? 'ON' : 'OFF';
 	agentStatus.className = isRunning ? 'agent-status-on' : 'agent-status-off';
 	agentBroadcast.textContent = isBroadcastEnabled ? 'ON' : 'OFF';
 	agentBroadcast.className = isBroadcastEnabled ? 'agent-status-on' : 'agent-status-off';
-	btnAgentOn.disabled = isRunning;
-	btnAgentOff.disabled = !isRunning;
+	btnAgentToggle.textContent = isRunning ? 'Agent ON' : 'Agent OFF';
+	btnAgentToggle.classList.toggle('agent-btn-on', isRunning);
+	btnAgentToggle.classList.toggle('agent-btn-off', !isRunning);
+	btnAgentToggle.setAttribute('aria-pressed', String(isRunning));
+	btnAgentToggle.disabled = false;
 	btnBroadcastOn.disabled = isBroadcastEnabled;
 	btnBroadcastOff.disabled = !isBroadcastEnabled;
 }
 
-async function toggleAgent(url) {
-	btnAgentOn.disabled = true;
-	btnAgentOff.disabled = true;
+// Single Agent toggle: decides whether to call start or stop endpoint.
+async function toggleAgent() {
+	btnAgentToggle.disabled = true;
+	const url = agentRunning ? '/api/agent/stop' : '/api/agent/start';
 	try {
 		await fetch(url, { method: 'POST' });
 		await pollStatus();
@@ -291,6 +312,7 @@ async function toggleAgent(url) {
 	}
 }
 
+// Broadcast controls use dedicated on/off endpoints.
 async function toggleBroadcast(url) {
 	btnBroadcastOn.disabled = true;
 	btnBroadcastOff.disabled = true;
@@ -307,6 +329,7 @@ function setTdLaunchStatus(state, klass) {
 	tdLaunchStatus.className = klass;
 }
 
+// Launches the bundled TouchDesigner project.
 async function runExampleToe() {
 	btnRunExampleToe.disabled = true;
 	setTdLaunchStatus('LAUNCHING', 'agent-status-on');
@@ -326,6 +349,7 @@ async function runExampleToe() {
 	}
 }
 
+// Inspects local running TouchDesigner processes and reports in terminal panel.
 async function checkTdProcesses() {
 	btnCheckTd.disabled = true;
 	pushTerminalLine('[TD] Checking for running TouchDesigner processes...', 'terminal-log-info');
@@ -360,6 +384,7 @@ function setTdSendStatus(state, klass) {
 	tdSendStatus.className = klass;
 }
 
+// Sends a test payload to TouchDesigner web endpoint.
 async function sendTdTestData() {
 	btnSendTdTestData.disabled = true;
 	setTdSendStatus('SENDING', 'agent-status-on');
@@ -387,6 +412,7 @@ function setOllamaStatus(isUp, modelCount) {
 	ollamaModelCount.textContent = String(modelCount ?? 0);
 }
 
+// Populates the model selector from /api/ollama/status response.
 function populateOllamaModels(models) {
 	ollamaModelSelect.innerHTML = '';
 	if (!Array.isArray(models) || models.length === 0) {
@@ -407,6 +433,7 @@ function populateOllamaModels(models) {
 	});
 }
 
+// Checks Ollama health and updates status + model list.
 async function checkOllamaStatus() {
 	btnCheckOllama.disabled = true;
 	setOllamaStatus(false, 0);
@@ -431,6 +458,7 @@ async function checkOllamaStatus() {
 	}
 }
 
+// Sends user message to the backend agent and appends replies to terminal panel.
 async function sendUserInputToAgent() {
 	const text = userInputText.value.trim();
 	if (!text) {
@@ -463,8 +491,7 @@ async function sendUserInputToAgent() {
 	}
 }
 
-btnAgentOn.addEventListener('click', () => toggleAgent('/api/agent/start'));
-btnAgentOff.addEventListener('click', () => toggleAgent('/api/agent/stop'));
+btnAgentToggle.addEventListener('click', toggleAgent);
 btnBroadcastOn.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/on'));
 btnBroadcastOff.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/off'));
 btnRunExampleToe.addEventListener('click', runExampleToe);
@@ -479,4 +506,5 @@ userInputText.addEventListener('keydown', (e) => {
 	}
 });
 
+// Initial Ollama status probe on page load.
 checkOllamaStatus();
