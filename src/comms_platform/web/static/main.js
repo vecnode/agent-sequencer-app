@@ -12,8 +12,7 @@ const statOscIn = document.getElementById('stat-osc-in');
 const statOscOut = document.getElementById('stat-osc-out');
 const statClients = document.getElementById('stat-clients');
 const btnAgentToggle = document.getElementById('btn-agent-toggle');
-const btnBroadcastOn = document.getElementById('btn-broadcast-on');
-const btnBroadcastOff = document.getElementById('btn-broadcast-off');
+const btnBroadcastToggle = document.getElementById('btn-broadcast-toggle');
 const btnRunExampleToe = document.getElementById('btn-run-example-toe');
 const btnCheckTd = document.getElementById('btn-check-td');
 const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
@@ -42,6 +41,7 @@ const tabPanels = {
 let count   = 0;
 let paused  = false;
 let agentRunning = false;
+let broadcastEnabled = false;
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
 const THEME_STORAGE_KEY = 'comms-platform-theme';
@@ -287,6 +287,7 @@ function escHtml(str) {
 // Updates Agent/Broadcast visual state from backend status.
 function setAgentUi(isRunning, isBroadcastEnabled) {
 	agentRunning = isRunning;
+	broadcastEnabled = isBroadcastEnabled;
 	agentStatus.textContent = isRunning ? 'ON' : 'OFF';
 	agentStatus.className = isRunning ? 'agent-status-on' : 'agent-status-off';
 	agentBroadcast.textContent = isBroadcastEnabled ? 'ON' : 'OFF';
@@ -296,8 +297,11 @@ function setAgentUi(isRunning, isBroadcastEnabled) {
 	btnAgentToggle.classList.toggle('agent-btn-off', !isRunning);
 	btnAgentToggle.setAttribute('aria-pressed', String(isRunning));
 	btnAgentToggle.disabled = false;
-	btnBroadcastOn.disabled = isBroadcastEnabled;
-	btnBroadcastOff.disabled = !isBroadcastEnabled;
+	btnBroadcastToggle.textContent = isBroadcastEnabled ? 'Broadcast ON' : 'Broadcast OFF';
+	btnBroadcastToggle.classList.toggle('agent-btn-on', isBroadcastEnabled);
+	btnBroadcastToggle.classList.toggle('agent-btn-off', !isBroadcastEnabled);
+	btnBroadcastToggle.setAttribute('aria-pressed', String(isBroadcastEnabled));
+	btnBroadcastToggle.disabled = false;
 }
 
 // Single Agent toggle: decides whether to call start or stop endpoint.
@@ -312,14 +316,24 @@ async function toggleAgent() {
 	}
 }
 
-// Broadcast controls use dedicated on/off endpoints.
-async function toggleBroadcast(url) {
-	btnBroadcastOn.disabled = true;
-	btnBroadcastOff.disabled = true;
+// Single Broadcast toggle: updates backend agent streaming mode on/off.
+async function toggleBroadcast() {
+	btnBroadcastToggle.disabled = true;
+	const nextEnabled = !broadcastEnabled;
+	const url = nextEnabled ? '/api/agent/broadcast/on' : '/api/agent/broadcast/off';
 	try {
-		await fetch(url, { method: 'POST' });
+		const response = await fetch(url, { method: 'POST' });
+		if (response.ok) {
+			pushTerminalLine(
+				nextEnabled ? '[AGENT] Broadcast turned ON' : '[AGENT] Broadcast turned OFF',
+				'terminal-log-info'
+			);
+		} else {
+			pushTerminalLine('[AGENT] ERROR toggling Broadcast (request failed)', 'terminal-log-error');
+		}
 		await pollStatus();
-	} catch (_) {
+	} catch (err) {
+		pushTerminalLine(`[AGENT] ERROR toggling Broadcast (${err})`, 'terminal-log-error');
 		await pollStatus();
 	}
 }
@@ -492,8 +506,7 @@ async function sendUserInputToAgent() {
 }
 
 btnAgentToggle.addEventListener('click', toggleAgent);
-btnBroadcastOn.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/on'));
-btnBroadcastOff.addEventListener('click', () => toggleBroadcast('/api/agent/broadcast/off'));
+btnBroadcastToggle.addEventListener('click', toggleBroadcast);
 btnRunExampleToe.addEventListener('click', runExampleToe);
 btnCheckTd.addEventListener('click', checkTdProcesses);
 btnSendTdTestData.addEventListener('click', sendTdTestData);
