@@ -1,10 +1,14 @@
-# agent-sequencer-app (Comms Platform)
+# agent-sequencer-app
 
-Under development. 
+Under active development. 
 
-This repository is the foundation for a professional multimodal communications platform. The system coordinates tool-enabled agents for robust signal routing, orchestration, and realtime monitoring.
+This repository contains a professional agent-based multimodal communications platform. The system coordinates a master agent with realtime monitoring and browser UI.
 
-Coordination is mandatory for critical environments.
+Development Guidelines:
+
+- Coordination is mandatory for critical environments.
+- Traceable platform execution with accurate timings.
+- A master agent controls and is accessed by the platform.
 
 ## Reproduce (Host)
 
@@ -12,7 +16,7 @@ Coordination is mandatory for critical environments.
 # Windows
 .\run_platform.bat
 
-# 1. Install dependencies (creates .venv in this folder)
+# 1. Manually
 uv venv
 uv pip install -r requirements.txt
 
@@ -70,4 +74,43 @@ Current API endpoints:
 API tests currently cover core and integration-safe routes (health/status, signals, agent controls, TouchDesigner/Ollama status/open).
 
 ## Repository Structure
+
+```text
+.
+|-- LICENSE
+|-- README.md
+|-- pyproject.toml
+|-- requirements.txt
+|-- run_platform.bat
+|-- docker/ (containerization resources)
+|   `-- README.md
+|-- docs/ (project documentation)
+|   `-- README.md
+|-- src/ (application source code)
+|   |-- comms_platform/ (core platform package)
+|   |   |-- __init__.py
+|   |   |-- agent_coordinator.py
+|   |   |-- config.py
+|   |   |-- inference_worker.py
+|   |   |-- main.py
+|   |   |-- td_sender.py
+|   |   |-- thread_manager.py
+|   |   |-- utils/ (shared utilities)
+|   |   |   |-- __init__.py
+|   |   |   `-- logger.py
+|   |   `-- web/ (FastAPI web server and UI)
+|   |       |-- __init__.py
+|   |       |-- app.py
+|   |       `-- static/ (frontend assets)
+|   |           |-- index.html
+|   |           |-- main.js
+|   |           `-- styles.css
+|-- tests/ (automated test suite)
+|   |-- README.md
+|   `-- test_api.py
+`-- touchdesigner/ (TouchDesigner project files)
+    |-- README.md
+    |-- example1.toe
+    `-- python1.py
+```
 
