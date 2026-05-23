@@ -1,4 +1,4 @@
-# Communications Platform
+# agent-sequencer-app (Comms Platform)
 
 Under development. 
 
@@ -68,4 +68,6 @@ Current API endpoints:
 
 
 API tests currently cover core and integration-safe routes (health/status, signals, agent controls, TouchDesigner/Ollama status/open).
+
+## Repository Structure
 

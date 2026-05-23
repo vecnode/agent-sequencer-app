@@ -6,11 +6,71 @@
   --surface-alt: #121212;
   --border: #2a2a2a;
   --text: #d4d4d4;
-  --muted: #555;
+  --muted: #8e96a3;
   --accent: #00d4ff;
+  --accent-soft: rgba(0, 212, 255, 0.08);
   --green: #3ecf8e;
   --red: #f56565;
+  --input-bg: #0d0d0d;
+  --widget-glow-start: rgba(0, 212, 255, 0.04);
+  --widget-glow-end: rgba(0, 212, 255, 0.01);
+  --terminal-system: #9aa6b2;
+  --terminal-ollama: #5cc8ff;
+  --terminal-human: #f6c445;
+  --terminal-td: #7dd3a7;
+  --row-hover-bg: #1a1a1a;
+  --placeholder-line: rgba(255, 255, 255, 0.03);
+  --placeholder-overlay-top: rgba(255, 255, 255, 0.01);
+  --placeholder-overlay-bottom: rgba(255, 255, 255, 0);
   --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-alt: #eef2f7;
+  --border: #d0d8e4;
+  --text: #162033;
+  --muted: #667388;
+  --accent: #0077b8;
+  --accent-soft: rgba(0, 119, 184, 0.13);
+  --green: #1f9c64;
+  --red: #cb3f3f;
+  --input-bg: #f8fbff;
+  --widget-glow-start: rgba(0, 119, 184, 0.10);
+  --widget-glow-end: rgba(0, 119, 184, 0.03);
+  --terminal-system: #506078;
+  --terminal-ollama: #0b7bb7;
+  --terminal-human: #a66b00;
+  --terminal-td: #128056;
+  --row-hover-bg: #e8eef7;
+  --placeholder-line: rgba(22, 32, 51, 0.06);
+  --placeholder-overlay-top: rgba(22, 32, 51, 0.02);
+  --placeholder-overlay-bottom: rgba(22, 32, 51, 0);
+}
+
+body[data-theme="light"] {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-alt: #eef2f7;
+  --border: #d0d8e4;
+  --text: #162033;
+  --muted: #667388;
+  --accent: #0077b8;
+  --accent-soft: rgba(0, 119, 184, 0.13);
+  --green: #1f9c64;
+  --red: #cb3f3f;
+  --input-bg: #f8fbff;
+  --widget-glow-start: rgba(0, 119, 184, 0.10);
+  --widget-glow-end: rgba(0, 119, 184, 0.03);
+  --terminal-system: #506078;
+  --terminal-ollama: #0b7bb7;
+  --terminal-human: #a66b00;
+  --terminal-td: #128056;
+  --row-hover-bg: #e8eef7;
+  --placeholder-line: rgba(22, 32, 51, 0.06);
+  --placeholder-overlay-top: rgba(22, 32, 51, 0.02);
+  --placeholder-overlay-bottom: rgba(22, 32, 51, 0);
 }
 
 html, body {
@@ -59,7 +119,7 @@ html, body {
 .tab.active {
   color: var(--accent);
   border-color: var(--accent);
-  background: rgba(0, 212, 255, 0.08);
+  background: var(--accent-soft);
 }
 
 header {
@@ -87,6 +147,84 @@ header .sep { color: var(--border); }
   gap: 6px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.theme-menu {
+  position: relative;
+}
+
+.theme-toggle {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-color: transparent;
+  border-radius: 4px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.theme-toggle:hover,
+.theme-toggle[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.theme-toggle[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.theme-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 160px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
+  z-index: 200;
+}
+
+.theme-dropdown[hidden] {
+  display: none;
+}
+
+.theme-option {
+  font-family: var(--font-mono);
+  width: 100%;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: left;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.theme-option:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.theme-option.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .dot {
@@ -168,7 +306,7 @@ main {
 .widget-panel {
   border: 1px solid var(--border);
   background:
-    linear-gradient(180deg, rgba(0, 212, 255, 0.04), rgba(0, 212, 255, 0.01)),
+    linear-gradient(180deg, var(--widget-glow-start), var(--widget-glow-end)),
     var(--surface-alt);
 }
 
@@ -245,7 +383,7 @@ main {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: #0d0d0d;
+  background: var(--input-bg);
   color: var(--text);
 }
 
@@ -253,7 +391,7 @@ main {
   overflow-y: auto;
   overflow-x: auto;
   border: 1px solid var(--border);
-  background: #0d0d0d;
+  background: var(--input-bg);
   padding: 10px;
   color: var(--text);
   font-size: 11px;
@@ -274,15 +412,15 @@ main {
 }
 
 .terminal-log-system {
-  color: #9aa6b2;
+  color: var(--terminal-system);
 }
 
 .terminal-log-ollama {
-  color: #5cc8ff;
+  color: var(--terminal-ollama);
 }
 
 .terminal-log-human {
-  color: #f6c445;
+  color: var(--terminal-human);
 }
 
 .terminal-log-agent {
@@ -290,7 +428,7 @@ main {
 }
 
 .terminal-log-td {
-  color: #7dd3a7;
+  color: var(--terminal-td);
 }
 
 .terminal-log-warning {
@@ -331,7 +469,7 @@ main {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: #0d0d0d;
+  background: var(--input-bg);
   color: var(--text);
 }
 
@@ -465,13 +603,13 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, var(--placeholder-overlay-top), var(--placeholder-overlay-bottom)),
     repeating-linear-gradient(
       0deg,
       transparent,
       transparent 24px,
-      rgba(255, 255, 255, 0.03) 24px,
-      rgba(255, 255, 255, 0.03) 25px
+      var(--placeholder-line) 24px,
+      var(--placeholder-line) 25px
     );
 }
 
@@ -510,7 +648,7 @@ main {
   transition: background 0.1s;
 }
 
-.message:hover { background: var(--surface); }
+.message:hover { background: var(--row-hover-bg); }
 
 
 .msg-time {
@@ -624,6 +762,15 @@ main {
     height: auto;
     padding-top: 8px;
     padding-bottom: 8px;
+  }
+
+  .theme-menu {
+    margin-left: auto;
+  }
+
+  .theme-dropdown {
+    right: 0;
+    min-width: 150px;
   }
 
   .toolbar {
