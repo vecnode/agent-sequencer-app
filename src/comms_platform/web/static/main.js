@@ -213,6 +213,7 @@ function pushTerminalLine(text, className = '') {
 		terminalFeed.removeChild(terminalFeed.firstChild);
 	}
 	forceTerminalScroll();
+	return row;
 }
 
 // Tab navigation controller.
@@ -330,7 +331,6 @@ function connect() {
 			`[STREAM] ${signalAddr} ${JSON.stringify(signalParams)} (${signalSource})`,
 			'terminal-log-stream'
 		);
-
 		count++;
 		statCount.textContent = count;
 		agentState.stream.message_count = count;
@@ -372,6 +372,82 @@ function connect() {
 }
 
 connect();
+
+function trimTerminalRows() {
+	while (terminalFeed.children.length > TERMINAL_MAX_ROWS) {
+		terminalFeed.removeChild(terminalFeed.firstChild);
+	}
+	forceTerminalScroll();
+}
+
+async function playTtsForText(text, button) {
+	const previousLabel = button.textContent;
+	button.disabled = true;
+	button.textContent = 'Generating...';
+
+	try {
+		const response = await fetch('/api/tts/synthesize', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text, lang: 'en', voice_name: 'M1' }),
+		});
+
+		if (!response.ok) {
+			let errorMessage = `request failed (${response.status})`;
+			try {
+				const payload = await response.json();
+				errorMessage = payload.error || errorMessage;
+			} catch (_) {}
+			throw new Error(errorMessage);
+		}
+
+		const audioBlob = await response.blob();
+		const audioUrl = URL.createObjectURL(audioBlob);
+		const audio = new Audio(audioUrl);
+		button.textContent = 'Playing...';
+
+		audio.addEventListener('ended', () => {
+			URL.revokeObjectURL(audioUrl);
+			button.disabled = false;
+			button.textContent = previousLabel;
+		});
+
+		audio.addEventListener('error', () => {
+			URL.revokeObjectURL(audioUrl);
+			button.disabled = false;
+			button.textContent = previousLabel;
+			pushTerminalLine('[TTS] ERROR audio playback failed', 'terminal-log-error');
+		});
+
+		await audio.play();
+	} catch (err) {
+		button.disabled = false;
+		button.textContent = previousLabel;
+		pushTerminalLine(`[TTS] ERROR (${err})`, 'terminal-log-error');
+	}
+}
+
+function pushAgentReplyWithListen(text) {
+	const row = document.createElement('div');
+	row.className = 'terminal-line terminal-log-agent';
+
+	const message = document.createElement('span');
+	message.textContent = `[AGENT] ${text}`;
+	row.appendChild(message);
+
+	const button = document.createElement('button');
+	button.type = 'button';
+	button.textContent = 'Listen';
+	button.className = 'btn btn-small';
+	button.style.marginLeft = '10px';
+	button.addEventListener('click', () => {
+		playTtsForText(text, button);
+	});
+	row.appendChild(button);
+
+	terminalFeed.appendChild(row);
+	trimTerminalRows();
+}
 
 // General toolbar controls.
 document.getElementById('btn-clear').addEventListener('click', () => {
@@ -617,21 +693,31 @@ async function sendUserInputToAgent() {
 	btnUserInputSend.disabled = true;
 	userInputText.disabled = true;
 	pushTerminalLine(`[HUMAN] ${text}`, 'terminal-log-info');
+	const waitingRow = pushTerminalLine('[AGENT] (waiting for response)', 'terminal-log-system');
 
 	try {
 		const res = await fetch('/api/agent/message', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text }),
+			body: JSON.stringify({
+				text,
+				selected_model: agentState.ollama.selected_model,
+			}),
 		});
 		const json = await res.json();
+		if (waitingRow && waitingRow.parentNode === terminalFeed) {
+			terminalFeed.removeChild(waitingRow);
+		}
 		if (res.ok && json.ok) {
-			pushTerminalLine(`[AGENT] ${json.reply}`, 'terminal-log-info');
+			pushAgentReplyWithListen(json.reply);
 			userInputText.value = '';
 		} else {
 			pushTerminalLine(`[AGENT] ERROR (${json.error || 'request failed'})`, 'terminal-log-error');
 		}
 	} catch (err) {
+		if (waitingRow && waitingRow.parentNode === terminalFeed) {
+			terminalFeed.removeChild(waitingRow);
+		}
 		pushTerminalLine(`[AGENT] ERROR (${err})`, 'terminal-log-error');
 	} finally {
 		userInputText.disabled = false;

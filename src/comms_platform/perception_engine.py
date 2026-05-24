@@ -1,10 +1,13 @@
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.request import Request, urlopen
+
+import json
 
 from .utils.logger import get_logger
 
-logger = get_logger("master.agent.intent")
+logger = get_logger("master.agent.perception")
 
 
 @dataclass
@@ -28,42 +31,29 @@ class PerceptionDecision:
 
 
 class PerceptionEngine:
-    """Classify inbound text into chat vs tool intent using embeddings when available."""
-
-    _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+    """Classify inbound text into chat vs tool intent using Ollama."""
 
     def __init__(
         self,
+        ollama_base_url: str,
         model_name: str | None = None,
         confidence_threshold: float = 0.7,
         uncertain_threshold: float = 0.45,
         enabled: bool = True,
     ) -> None:
+        self._ollama_base_url = ollama_base_url.rstrip("/")
         self._enabled = enabled
-        self._model_name = model_name or self._DEFAULT_MODEL
+        self._model_name = (model_name or "").strip() or None
         self._confidence_threshold = confidence_threshold
         self._uncertain_threshold = uncertain_threshold
-        self._encoder = None
-        self._prototype_vectors: dict[str, Any] = {}
-        self._prototypes = {
-            "chat": [
-                "let us discuss this",
-                "explain this to me",
-                "what do you think about this",
-                "chat with me about this",
-            ],
-            "tool": [
-                "start the agent",
-                "stop the agent",
-                "turn broadcast on",
-                "send a signal to touchdesigner",
-                "run this action now",
-            ],
-        }
+        self._cached_model_name: str | None = None
+        self._model_load_error: str | None = None
         if self._enabled:
-            self._try_load_encoder()
+            self._try_connect_model()
+        else:
+            self._model_load_error = "perception_engine_disabled"
 
-    def classify(self, text: str) -> PerceptionDecision:
+    def classify(self, text: str, selected_model: str | None = None) -> PerceptionDecision:
         clean_text = text.strip()
         if not clean_text:
             return PerceptionDecision(
@@ -74,20 +64,46 @@ class PerceptionEngine:
                 scores={"chat": 1.0, "tool": 0.0},
             )
 
-        scores = self._score_text(clean_text)
-        best_intent = max(scores, key=scores.get)
-        confidence = float(scores[best_intent])
-
-        if confidence < self._uncertain_threshold:
+        if not self._enabled:
             return PerceptionDecision(
-                intent=best_intent,
-                confidence=confidence,
+                intent="unavailable",
+                confidence=0.0,
                 route="chat",
-                reason="low_confidence_fallback",
-                scores=scores,
+                reason="perception_model_unavailable",
+                scores={"chat": 0.0, "tool": 0.0},
             )
 
-        if best_intent == "tool" and confidence >= self._confidence_threshold:
+        try:
+            intent, model_used = self._classify_with_ollama(clean_text, selected_model=selected_model)
+        except Exception as exc:
+            logger.warning("Perception model scoring failed; routing disabled: %s", exc)
+            return PerceptionDecision(
+                intent="unavailable",
+                confidence=0.0,
+                route="chat",
+                reason="perception_model_unavailable",
+                scores={"chat": 0.0, "tool": 0.0},
+            )
+
+        if intent not in {"chat", "tool"}:
+            return PerceptionDecision(
+                intent="unavailable",
+                confidence=0.0,
+                route="chat",
+                reason="perception_model_unavailable",
+                scores={"chat": 0.0, "tool": 0.0},
+            )
+
+        scores = {"chat": 1.0 if intent == "chat" else 0.0, "tool": 1.0 if intent == "tool" else 0.0}
+        confidence = 1.0
+        logger.info(
+            "Perception classification via Ollama: model=%s intent=%s text=%r",
+            model_used,
+            intent,
+            clean_text,
+        )
+
+        if intent == "tool" and confidence >= self._confidence_threshold:
             tool_name = self._extract_tool_name(clean_text)
             if tool_name:
                 return PerceptionDecision(
@@ -107,85 +123,87 @@ class PerceptionEngine:
             )
 
         return PerceptionDecision(
-            intent=best_intent,
+            intent=intent,
             confidence=confidence,
             route="chat",
             reason="default_chat_route",
             scores=scores,
         )
 
-    def _try_load_encoder(self) -> None:
+    def _try_connect_model(self) -> None:
         try:
-            from sentence_transformers import SentenceTransformer
-
-            self._encoder = SentenceTransformer(self._model_name)
-            for intent, examples in self._prototypes.items():
-                self._prototype_vectors[intent] = self._encoder.encode(examples)
-            logger.info("Intent engine model loaded: %s", self._model_name)
+            model = self._resolve_model_name(None)
+            if not model:
+                raise RuntimeError("No Ollama model available for perception")
+            self._cached_model_name = model
+            self._model_load_error = None
+            logger.info("Perception engine model loaded (Ollama): %s", model)
         except Exception as exc:
-            self._encoder = None
-            logger.info("Intent engine falling back to heuristic mode: %s", exc)
+            self._model_load_error = str(exc)
+            logger.warning("Perception model failed to load: %s", exc)
 
-    def _score_text(self, text: str) -> dict[str, float]:
-        if self._encoder is None:
-            return self._heuristic_scores(text)
+    def _resolve_model_name(self, selected_model: str | None) -> str | None:
+        if selected_model and selected_model.strip():
+            return selected_model.strip()
+        if self._model_name:
+            return self._model_name
+        if self._cached_model_name:
+            return self._cached_model_name
 
-        try:
-            from sentence_transformers.util import cos_sim
+        req = Request(f"{self._ollama_base_url}/api/tags", method="GET")
+        with urlopen(req, timeout=5.0) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+        models = body.get("models", []) if isinstance(body, dict) else []
+        if not models:
+            return None
+        first = models[0]
+        if not isinstance(first, dict):
+            return None
+        name = str(first.get("name", "")).strip()
+        if not name:
+            return None
+        self._cached_model_name = name
+        return name
 
-            vector = self._encoder.encode([text])
-            scores: dict[str, float] = {}
-            for intent, prototype_vectors in self._prototype_vectors.items():
-                similarity = cos_sim(vector, prototype_vectors)
-                scores[intent] = float(similarity.max().item())
-            return scores
-        except Exception as exc:
-            logger.info("Intent engine scoring fallback to heuristics: %s", exc)
-            return self._heuristic_scores(text)
+    def _classify_with_ollama(self, text: str, selected_model: str | None = None) -> tuple[str, str]:
+        model_name = self._resolve_model_name(selected_model)
+        if not model_name:
+            raise RuntimeError("No Ollama model available for perception classification")
 
-    def _heuristic_scores(self, text: str) -> dict[str, float]:
-        lowered = text.lower()
-        tool_hits = 0
-        chat_hits = 0
-
-        tool_terms = (
-            "start",
-            "stop",
-            "run",
-            "trigger",
-            "execute",
-            "send",
-            "broadcast",
-            "turn on",
-            "turn off",
+        prompt = (
+            "You are an intent classifier for an agent control UI. "
+            "Reply with exactly one lowercase word and nothing else: chat or tool. "
+            "Use tool only if the user is asking to execute an action/function/command in the system. "
+            "Otherwise use chat.\n"
+            f"User message: {text}\n"
+            "Answer:"
         )
-        chat_terms = (
-            "what",
-            "why",
-            "how",
-            "explain",
-            "think",
-            "chat",
-            "tell me",
-            "help me understand",
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0,
+            },
+        }
+        req = Request(
+            f"{self._ollama_base_url}/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
+        with urlopen(req, timeout=15.0) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
 
-        for term in tool_terms:
-            if term in lowered:
-                tool_hits += 1
-        for term in chat_terms:
-            if term in lowered:
-                chat_hits += 1
-
-        # Keep scores bounded in [0,1] for predictable thresholds.
-        tool_score = min(0.2 + 0.18 * tool_hits, 0.95)
-        chat_score = min(0.2 + 0.18 * chat_hits, 0.95)
-
-        if tool_hits == 0 and chat_hits == 0:
-            chat_score = 0.51
-            tool_score = 0.49
-
-        return {"chat": chat_score, "tool": tool_score}
+        raw = str(body.get("response", "")).strip().lower()
+        normalized = re.sub(r"[^a-z]", "", raw)
+        if normalized in {"chat", "tool"}:
+            return normalized, model_name
+        if normalized.startswith("chat"):
+            return "chat", model_name
+        if normalized.startswith("tool"):
+            return "tool", model_name
+        raise RuntimeError(f"Invalid perception classification from Ollama: {raw!r}")
 
     def _extract_tool_name(self, text: str) -> str | None:
         lowered = re.sub(r"\s+", " ", text.lower()).strip()
@@ -197,5 +215,7 @@ class PerceptionEngine:
         if "stop" in lowered and "agent" in lowered:
             return "agent_stop"
         if "start" in lowered and "agent" in lowered:
+            return "agent_start"
+        if "run" in lowered and "example" in lowered:
             return "agent_start"
         return None

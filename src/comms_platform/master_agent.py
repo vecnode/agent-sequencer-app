@@ -11,6 +11,9 @@ class MasterAgent:
     """Single master agent that maintains heartbeat and routes message intent."""
 
     def __init__(self, config=None) -> None:
+        ollama_host = getattr(config, "OLLAMA_HOST", "127.0.0.1") if config is not None else "127.0.0.1"
+        ollama_port = getattr(config, "OLLAMA_PORT", 11434) if config is not None else 11434
+        ollama_base_url = f"http://{ollama_host}:{ollama_port}"
         self._thread: threading.Thread | None = None
         self._stop_event: threading.Event | None = None
         self._lock = threading.Lock()
@@ -19,10 +22,19 @@ class MasterAgent:
         self._history_text_read: list[str] = []
         self._last_intent_decision: PerceptionDecision | None = None
         self._intent_engine = PerceptionEngine(
-            model_name=getattr(config, "INTENT_MODEL_NAME", None),
-            confidence_threshold=getattr(config, "INTENT_CONFIDENCE_THRESHOLD", 0.7),
-            uncertain_threshold=getattr(config, "INTENT_UNCERTAIN_THRESHOLD", 0.45),
-            enabled=getattr(config, "INTENT_ENGINE_ENABLED", True),
+            ollama_base_url=ollama_base_url,
+            model_name=getattr(config, "PERCEPTION_MODEL_NAME", getattr(config, "INTENT_MODEL_NAME", None)),
+            confidence_threshold=getattr(
+                config,
+                "PERCEPTION_CONFIDENCE_THRESHOLD",
+                getattr(config, "INTENT_CONFIDENCE_THRESHOLD", 0.7),
+            ),
+            uncertain_threshold=getattr(
+                config,
+                "PERCEPTION_UNCERTAIN_THRESHOLD",
+                getattr(config, "INTENT_UNCERTAIN_THRESHOLD", 0.45),
+            ),
+            enabled=getattr(config, "PERCEPTION_ENGINE_ENABLED", getattr(config, "INTENT_ENGINE_ENABLED", True)),
         )
 
     def start(self) -> bool:
@@ -93,14 +105,18 @@ class MasterAgent:
                 return None
             return self._last_intent_decision.to_dict()
 
-    def handle_human_message(self, text: str) -> str:
+    def handle_human_message(self, text: str, selected_model: str | None = None) -> str:
         clean_text = text.strip()
         with self._lock:
             self._history_text_read.append(clean_text)
 
-        decision = self._intent_engine.classify(clean_text)
+        decision = self._intent_engine.classify(clean_text, selected_model=selected_model)
         with self._lock:
             self._last_intent_decision = decision
+
+        if decision.reason == "perception_model_unavailable":
+            logger.warning("Perception model unavailable; human message not classified")
+            return "warning: perception model unavailable. ensure Ollama is running and a model is selected."
 
         if decision.route == "tool" and decision.tool_name:
             self._dispatch_tool(decision.tool_name)

@@ -6,6 +6,7 @@ import logging
 import os
 import socket
 import subprocess
+import tempfile
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from fastapi import Body, FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -30,6 +31,11 @@ _TD_WEB_DEFAULT_HOST = os.getenv("TD_WEB_HOST", "127.0.0.1")
 _TD_WEB_DEFAULT_PORT = int(os.getenv("TD_WEB_PORT", 9980))
 _OLLAMA_DEFAULT_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1")
 _OLLAMA_DEFAULT_PORT = int(os.getenv("OLLAMA_PORT", 11434))
+_TTS_DEFAULT_LANG = os.getenv("TTS_DEFAULT_LANG", "en")
+_TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "M1")
+
+_tts_engine: Any | None = None
+_tts_engine_lock = threading.Lock()
 
 
 class EventBus:
@@ -109,6 +115,13 @@ class TdWebPayload(BaseModel):
 
 class AgentMessagePayload(BaseModel):
     text: str = Field(min_length=1)
+    selected_model: str | None = None
+
+
+class TtsPayload(BaseModel):
+    text: str = Field(min_length=1)
+    lang: str = Field(default=_TTS_DEFAULT_LANG, min_length=2, max_length=8)
+    voice_name: str = Field(default=_TTS_DEFAULT_VOICE, min_length=1, max_length=32)
 
 
 def _post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
@@ -167,6 +180,111 @@ def _fetch_ollama_status(base_url: str, timeout: float = 3.0) -> dict:
             "error": str(exc),
             "models_count": 0,
             "models": [],
+        }
+
+
+def _generate_ollama_reply(
+    base_url: str,
+    prompt: str,
+    selected_model: str | None = None,
+    timeout: float = 20.0,
+) -> dict:
+    status = _fetch_ollama_status(base_url, timeout=min(timeout, 5.0))
+    if not status.get("ok"):
+        return {
+            "ok": False,
+            "error": status.get("error", "ollama_unreachable"),
+            "model": None,
+            "reply": None,
+        }
+
+    models = status.get("models", [])
+    model_name = (selected_model or "").strip() or (models[0] if models else "")
+    if not model_name:
+        return {
+            "ok": False,
+            "error": "no_ollama_models_available",
+            "model": None,
+            "reply": None,
+        }
+
+    generate_url = f"{base_url}/api/generate"
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+    }
+    req = Request(
+        generate_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+            reply = str(body.get("response", "")).strip()
+            if not reply:
+                return {
+                    "ok": False,
+                    "error": "ollama_empty_response",
+                    "model": model_name,
+                    "reply": None,
+                }
+            return {
+                "ok": True,
+                "error": None,
+                "model": model_name,
+                "reply": reply,
+            }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "model": model_name,
+            "reply": None,
+        }
+
+
+def _get_tts_engine() -> Any:
+    global _tts_engine
+    with _tts_engine_lock:
+        if _tts_engine is None:
+            from supertonic import TTS
+
+            _tts_engine = TTS(auto_download=True)
+            logger.info("Supertonic TTS engine initialized.")
+        return _tts_engine
+
+
+def _synthesize_tts_audio_bytes(text: str, lang: str, voice_name: str) -> dict:
+    try:
+        tts = _get_tts_engine()
+        style = tts.get_voice_style(voice_name=voice_name)
+        wav, duration = tts.synthesize(text, voice_style=style, lang=lang)
+
+        fd, temp_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            tts.save_audio(wav, temp_path)
+            audio_bytes = Path(temp_path).read_bytes()
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+        return {
+            "ok": True,
+            "audio_bytes": audio_bytes,
+            "duration": float(duration),
+            "voice_name": voice_name,
+            "lang": lang,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
         }
 
 
@@ -320,14 +438,81 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
 
     @app.post("/api/agent/message")
     async def send_agent_message(payload: AgentMessagePayload):
-        reply = master_agent.handle_human_message(payload.text)
+        reply = master_agent.handle_human_message(payload.text, selected_model=payload.selected_model)
         intent = getattr(master_agent, "last_intent_decision", None)
+        ollama = {
+            "attempted": False,
+            "ok": False,
+            "model": None,
+            "error": None,
+        }
+
+        if isinstance(intent, dict) and intent.get("route") == "chat":
+            loop = asyncio.get_running_loop()
+            ollama_result = await loop.run_in_executor(
+                None,
+                _generate_ollama_reply,
+                _ollama_url,
+                payload.text,
+                payload.selected_model,
+            )
+            ollama = {
+                "attempted": True,
+                "ok": bool(ollama_result.get("ok")),
+                "model": ollama_result.get("model"),
+                "error": ollama_result.get("error"),
+            }
+            if ollama_result.get("ok"):
+                reply = str(ollama_result.get("reply", "")).strip()
+                logger.info("Ollama chat reply generated using model: %s", ollama_result.get("model"))
+            else:
+                logger.warning("Ollama chat generation unavailable: %s", ollama_result.get("error"))
+
         return {
             "ok": True,
             "reply": reply,
             "history_size": len(master_agent.history_text_read),
             "intent": intent,
+            "ollama": ollama,
         }
+
+    @app.post("/api/tts/synthesize")
+    async def synthesize_tts(payload: TtsPayload):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            _synthesize_tts_audio_bytes,
+            payload.text,
+            payload.lang,
+            payload.voice_name,
+        )
+
+        if not result.get("ok"):
+            logger.warning("TTS synthesis failed: %s", result.get("error"))
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "ok": False,
+                    "error": result.get("error", "tts_synthesis_failed"),
+                },
+            )
+
+        logger.info(
+            "TTS synthesis completed: lang=%s voice=%s duration=%.2fs",
+            result.get("lang"),
+            result.get("voice_name"),
+            float(result.get("duration", 0.0)),
+        )
+
+        return StreamingResponse(
+            io.BytesIO(result["audio_bytes"]),
+            media_type="audio/wav",
+            headers={
+                "X-TTS-Duration": f"{float(result.get('duration', 0.0)):.2f}",
+                "X-TTS-Voice": str(result.get("voice_name", "")),
+                "X-TTS-Lang": str(result.get("lang", "")),
+            },
+        )
 
     @app.post("/api/touchdesigner/run-example")
     async def run_touchdesigner_example():
