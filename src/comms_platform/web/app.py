@@ -33,6 +33,7 @@ _OLLAMA_DEFAULT_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1")
 _OLLAMA_DEFAULT_PORT = int(os.getenv("OLLAMA_PORT", 11434))
 _TTS_DEFAULT_LANG = os.getenv("TTS_DEFAULT_LANG", "en")
 _TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "M1")
+_TTS_PREWARM_ON_STARTUP = os.getenv("TTS_PREWARM_ON_STARTUP", "true").lower() == "true"
 
 _tts_engine: Any | None = None
 _tts_engine_lock = threading.Lock()
@@ -257,6 +258,40 @@ def _get_tts_engine() -> Any:
         return _tts_engine
 
 
+def _coerce_duration_seconds(value: Any) -> float:
+    """Best-effort conversion for SDK duration outputs (float, numpy scalar, or arrays)."""
+    try:
+        return float(value)
+    except Exception:
+        pass
+
+    # Handle numpy-like scalars/arrays without importing numpy.
+    item_fn = getattr(value, "item", None)
+    if callable(item_fn):
+        try:
+            return float(item_fn())
+        except Exception:
+            pass
+
+    tolist_fn = getattr(value, "tolist", None)
+    if callable(tolist_fn):
+        try:
+            list_value = tolist_fn()
+            if isinstance(list_value, list) and list_value:
+                return float(list_value[0])
+            return float(list_value)
+        except Exception:
+            pass
+
+    if isinstance(value, (list, tuple)) and value:
+        try:
+            return float(value[0])
+        except Exception:
+            pass
+
+    return 0.0
+
+
 def _synthesize_tts_audio_bytes(text: str, lang: str, voice_name: str) -> dict:
     try:
         tts = _get_tts_engine()
@@ -277,7 +312,7 @@ def _synthesize_tts_audio_bytes(text: str, lang: str, voice_name: str) -> dict:
         return {
             "ok": True,
             "audio_bytes": audio_bytes,
-            "duration": float(duration),
+            "duration": _coerce_duration_seconds(duration),
             "voice_name": voice_name,
             "lang": lang,
         }
@@ -286,6 +321,14 @@ def _synthesize_tts_audio_bytes(text: str, lang: str, voice_name: str) -> dict:
             "ok": False,
             "error": str(exc),
         }
+
+
+def _prewarm_tts_engine() -> None:
+    try:
+        _get_tts_engine()
+        logger.info("Supertonic TTS prewarm completed.")
+    except Exception as exc:
+        logger.warning("Supertonic TTS prewarm failed: %s", exc)
 
 
 def _list_touchdesigner_processes() -> dict:
@@ -363,6 +406,11 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         root_logger.addHandler(event_log_handler)
         event_bus.attach_loop(asyncio.get_running_loop())
         logger.info("EventBus attached to asyncio loop.")
+
+        if _TTS_PREWARM_ON_STARTUP:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _prewarm_tts_engine)
+
         yield
         if master_agent.is_running:
             master_agent.stop()

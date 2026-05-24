@@ -690,8 +690,8 @@ async function sendUserInputToAgent() {
 		return;
 	}
 
-	btnUserInputSend.disabled = true;
-	userInputText.disabled = true;
+	userInputText.value = '';
+	userInputText.focus();
 	pushTerminalLine(`[HUMAN] ${text}`, 'terminal-log-info');
 	const waitingRow = pushTerminalLine('[AGENT] (waiting for response)', 'terminal-log-system');
 
@@ -710,7 +710,6 @@ async function sendUserInputToAgent() {
 		}
 		if (res.ok && json.ok) {
 			pushAgentReplyWithListen(json.reply);
-			userInputText.value = '';
 		} else {
 			pushTerminalLine(`[AGENT] ERROR (${json.error || 'request failed'})`, 'terminal-log-error');
 		}
@@ -719,10 +718,6 @@ async function sendUserInputToAgent() {
 			terminalFeed.removeChild(waitingRow);
 		}
 		pushTerminalLine(`[AGENT] ERROR (${err})`, 'terminal-log-error');
-	} finally {
-		userInputText.disabled = false;
-		btnUserInputSend.disabled = false;
-		userInputText.focus();
 	}
 }
 

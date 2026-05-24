@@ -2,7 +2,7 @@
 
 Under active development. 
 
-This repository contains a professional agent-based multimodal communications platform. The system coordinates a master agent with realtime monitoring and browser UI.
+This repository contains a professional agent-based multimodal communications platform. The system coordinates a master agent with realtime monitoring and browser UI. For LLMs, relies on Ollama, for TTS on Supertonic 3.
 
 Development Guidelines:
 
@@ -39,6 +39,10 @@ uv run pytest -q -s
 uv run pytest -q -s tests/test_api.py
 ```
 
+## Audio
+
+Supertonic 3 for real-time TTS on CPU.  
+On first time use will download when clicking "Listen".
 
 ## Docker (build)
 
