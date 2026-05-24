@@ -226,7 +226,7 @@ def _list_touchdesigner_processes() -> dict:
         }
 
 
-def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordinator, config=None) -> FastAPI:
+def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent, config=None) -> FastAPI:
     _td_web_host = getattr(config, "TD_WEB_HOST", None) or _TD_WEB_DEFAULT_HOST
     _td_web_port = getattr(config, "TD_WEB_PORT", None) or _TD_WEB_DEFAULT_PORT
     _td_web_url = f"http://{_td_web_host}:{_td_web_port}"
@@ -246,8 +246,8 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
         event_bus.attach_loop(asyncio.get_running_loop())
         logger.info("EventBus attached to asyncio loop.")
         yield
-        if agent_coordinator.is_running:
-            agent_coordinator.stop()
+        if master_agent.is_running:
+            master_agent.stop()
         thread_manager.kill_all()
         root_logger.removeHandler(event_log_handler)
 
@@ -277,54 +277,56 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, agent_coordi
             "sse_clients": event_bus.subscriber_count,
             "osc_output": f"{signal_gateway.osc_output_host}:{signal_gateway.osc_output_port}",
             "osc_input": f"{signal_gateway.osc_input_host}:{signal_gateway.osc_input_port}",
-            "agent_running": agent_coordinator.is_running,
-            "agent_heartbeats": agent_coordinator.heartbeat_count,
-            "agent_broadcast": agent_coordinator.broadcast_enabled,
+            "agent_running": master_agent.is_running,
+            "agent_heartbeats": master_agent.heartbeat_count,
+            "agent_broadcast": master_agent.broadcast_enabled,
         }
 
     @app.post("/api/agent/start")
     async def start_agent():
-        started = agent_coordinator.start()
+        started = master_agent.start()
         return {
             "ok": True,
             "started": started,
-            "running": agent_coordinator.is_running,
+            "running": master_agent.is_running,
         }
 
     @app.post("/api/agent/stop")
     async def stop_agent():
-        stopped = agent_coordinator.stop()
+        stopped = master_agent.stop()
         return {
             "ok": True,
             "stopped": stopped,
-            "running": agent_coordinator.is_running,
+            "running": master_agent.is_running,
         }
 
     @app.post("/api/agent/broadcast/on")
     async def enable_agent_broadcast():
-        enabled = agent_coordinator.set_broadcast(True)
+        enabled = master_agent.set_broadcast(True)
         return {
             "ok": True,
             "broadcast": enabled,
-            "running": agent_coordinator.is_running,
+            "running": master_agent.is_running,
         }
 
     @app.post("/api/agent/broadcast/off")
     async def disable_agent_broadcast():
-        enabled = agent_coordinator.set_broadcast(False)
+        enabled = master_agent.set_broadcast(False)
         return {
             "ok": True,
             "broadcast": enabled,
-            "running": agent_coordinator.is_running,
+            "running": master_agent.is_running,
         }
 
     @app.post("/api/agent/message")
     async def send_agent_message(payload: AgentMessagePayload):
-        reply = agent_coordinator.handle_human_message(payload.text)
+        reply = master_agent.handle_human_message(payload.text)
+        intent = getattr(master_agent, "last_intent_decision", None)
         return {
             "ok": True,
             "reply": reply,
-            "history_size": len(agent_coordinator.history_text_read),
+            "history_size": len(master_agent.history_text_read),
+            "intent": intent,
         }
 
     @app.post("/api/touchdesigner/run-example")

@@ -89,8 +89,9 @@ API tests currently cover core and integration-safe routes (health/status, signa
 |-- src/ (application source code)
 |   |-- comms_platform/ (core platform package)
 |   |   |-- __init__.py
-|   |   |-- agent_coordinator.py
+|   |   |-- master_agent.py
 |   |   |-- config.py
+|   |   |-- perception_engine.py
 |   |   |-- inference_worker.py
 |   |   |-- main.py
 |   |   |-- td_sender.py

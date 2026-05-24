@@ -383,11 +383,18 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .widget-agent-state-toolbar .widget-select {
-  width: auto;
+  width: 50%;
   min-width: 170px;
+}
+
+.agent-state-toolbar-btn {
+  padding: 5px 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .widget-agent-state-view {

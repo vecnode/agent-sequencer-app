@@ -8,7 +8,7 @@ import asyncio
 
 import uvicorn
 
-from .agent_coordinator import AgentCoordinator
+from .master_agent import MasterAgent
 from .config import Config
 from .td_sender import TouchDesignerSender
 from .thread_manager import ThreadManager
@@ -23,9 +23,9 @@ async def main():
     event_bus = EventBus()
     thread_manager = ThreadManager()
     td_sender = TouchDesignerSender(config, thread_manager, event_bus)
-    agent_coordinator = AgentCoordinator()
+    master_agent = MasterAgent(config=config)
 
-    app = create_app(event_bus, thread_manager, td_sender, agent_coordinator, config)
+    app = create_app(event_bus, thread_manager, td_sender, master_agent, config)
 
     logger.info(f"Starting Communications Platform -> http://{config.WEB_HOST}:{config.WEB_PORT}")
 

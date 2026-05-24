@@ -73,7 +73,7 @@ def _build_client() -> TestClient:
         event_bus=EventBus(),
         thread_manager=StubThreadManager(),
         signal_gateway=StubSignalGateway(),
-        agent_coordinator=StubAgentCoordinator(),
+        master_agent=StubAgentCoordinator(),
     )
     return TestClient(app)
 
@@ -120,7 +120,7 @@ def test_signals_publish_accepted():
         event_bus=EventBus(),
         thread_manager=StubThreadManager(),
         signal_gateway=gateway,
-        agent_coordinator=StubAgentCoordinator(),
+        master_agent=StubAgentCoordinator(),
     )
     with TestClient(app) as client:
         response = client.post(
@@ -145,7 +145,7 @@ def test_signals_send_stream_transport():
         event_bus=EventBus(),
         thread_manager=StubThreadManager(),
         signal_gateway=gateway,
-        agent_coordinator=StubAgentCoordinator(),
+        master_agent=StubAgentCoordinator(),
     )
     with TestClient(app) as client:
         response = client.post(
@@ -171,7 +171,7 @@ def test_signals_send_osc_transport():
         event_bus=EventBus(),
         thread_manager=StubThreadManager(),
         signal_gateway=gateway,
-        agent_coordinator=StubAgentCoordinator(),
+        master_agent=StubAgentCoordinator(),
     )
     with TestClient(app) as client:
         response = client.post(

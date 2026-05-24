@@ -17,3 +17,9 @@ class Config:
     TD_WEB_PORT = int(os.getenv("TD_WEB_PORT", 9980))
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1")
     OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", 11434))
+    INTENT_ENGINE_ENABLED = os.getenv("INTENT_ENGINE_ENABLED", "true").lower() == "true"
+    INTENT_MODEL_NAME = os.getenv(
+        "INTENT_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    INTENT_CONFIDENCE_THRESHOLD = float(os.getenv("INTENT_CONFIDENCE_THRESHOLD", 0.7))
+    INTENT_UNCERTAIN_THRESHOLD = float(os.getenv("INTENT_UNCERTAIN_THRESHOLD", 0.45))

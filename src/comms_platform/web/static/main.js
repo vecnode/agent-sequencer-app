@@ -20,6 +20,8 @@ const btnCheckOllama = document.getElementById('btn-check-ollama');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
 const agentStateSectionSelect = document.getElementById('agent-state-section');
+const btnAgentStateRefresh = document.getElementById('btn-agent-state-refresh');
+const btnAgentStateCopy = document.getElementById('btn-agent-state-copy');
 const agentStateView = document.getElementById('agent-state-view');
 const agentStatus = document.getElementById('agent-status');
 const agentBroadcast = document.getElementById('agent-broadcast');
@@ -49,20 +51,20 @@ const agentState = {
 	stream: {
 		paused: false,
 		message_count: 0,
-		osc_input: null,
-		osc_output: null,
+		osc_input: '0.0.0.0:7001',
+		osc_output: '127.0.0.1:7000',
 		last_message: null,
 	},
 	connections: {
-		sse_status: null,
-		sse_clients: null,
+		sse_status: 'connected',
+		sse_clients: 1,
 	},
 	touchdesigner: {
 		launch_status: 'IDLE',
 		send_status: 'IDLE',
 	},
 	ollama: {
-		status: 'UNKNOWN',
+		status: 'OFFLINE',
 		models_count: 0,
 		selected_model: null,
 	},
@@ -248,6 +250,44 @@ async function pollStatus() {
 		);
 		renderAgentState();
 	} catch (_) {}
+}
+
+// Synchronizes the Agent State panel with latest status endpoints and current UI state.
+async function refreshAgentStatePanel() {
+	agentState.stream.paused = paused;
+	agentState.stream.message_count = count;
+	agentState.connections.sse_status = dot.classList.contains('connected') ? 'connected' : 'reconnecting';
+	await pollStatus();
+	await checkOllamaStatus(true);
+	renderAgentState();
+}
+
+// Copies exactly what is displayed in the Agent State panel.
+async function copyAgentStateText() {
+	if (!agentStateView) return;
+	const text = agentStateView.textContent || '';
+	if (!text) return;
+
+	try {
+		await navigator.clipboard.writeText(text);
+		pushTerminalLine('[UI] Agent State copied to clipboard', 'terminal-log-system');
+		return;
+	} catch (_) {}
+
+	try {
+		const fallback = document.createElement('textarea');
+		fallback.value = text;
+		fallback.setAttribute('readonly', 'readonly');
+		fallback.style.position = 'fixed';
+		fallback.style.top = '-9999px';
+		document.body.appendChild(fallback);
+		fallback.select();
+		document.execCommand('copy');
+		document.body.removeChild(fallback);
+		pushTerminalLine('[UI] Agent State copied to clipboard', 'terminal-log-system');
+	} catch (_) {
+		pushTerminalLine('[UI] ERROR copying Agent State to clipboard', 'terminal-log-error');
+	}
 }
 pollStatus();
 setInterval(pollStatus, 1000);
@@ -539,25 +579,29 @@ function populateOllamaModels(models) {
 }
 
 // Checks Ollama health and updates status + model list.
-async function checkOllamaStatus() {
+async function checkOllamaStatus(silent = false) {
 	btnCheckOllama.disabled = true;
 	setOllamaStatus(false, 0);
-	pushTerminalLine('[OLLAMA] Checking service status...', 'terminal-log-info');
+	if (!silent) {
+		pushTerminalLine('[OLLAMA] Checking service status...', 'terminal-log-info');
+	}
 	try {
 		const res = await fetch('/api/ollama/status');
 		const json = await res.json();
 		const isUp = Boolean(res.ok && json.ok);
 		setOllamaStatus(isUp, json.models_count || 0);
 		populateOllamaModels(json.models || []);
-		if (isUp) {
+		if (!silent && isUp) {
 			pushTerminalLine(`[OLLAMA] ONLINE (${json.models_count || 0} models)`, 'terminal-log-info');
-		} else {
+		} else if (!silent) {
 			pushTerminalLine(`[OLLAMA] OFFLINE (${json.error || 'unknown error'})`, 'terminal-log-error');
 		}
 	} catch (err) {
 		setOllamaStatus(false, 0);
 		populateOllamaModels([]);
-		pushTerminalLine(`[OLLAMA] OFFLINE (${err})`, 'terminal-log-error');
+		if (!silent) {
+			pushTerminalLine(`[OLLAMA] OFFLINE (${err})`, 'terminal-log-error');
+		}
 	} finally {
 		btnCheckOllama.disabled = false;
 	}
@@ -603,6 +647,16 @@ btnCheckTd.addEventListener('click', checkTdProcesses);
 btnSendTdTestData.addEventListener('click', sendTdTestData);
 btnCheckOllama.addEventListener('click', checkOllamaStatus);
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
+if (btnAgentStateRefresh) {
+	btnAgentStateRefresh.addEventListener('click', async () => {
+		btnAgentStateRefresh.disabled = true;
+		await refreshAgentStatePanel();
+		btnAgentStateRefresh.disabled = false;
+	});
+}
+if (btnAgentStateCopy) {
+	btnAgentStateCopy.addEventListener('click', copyAgentStateText);
+}
 userInputText.addEventListener('keydown', (e) => {
 	if (e.key === 'Enter' && !e.shiftKey) {
 		e.preventDefault();
