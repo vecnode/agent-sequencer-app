@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -34,7 +35,7 @@ _TD_WEB_DEFAULT_PORT = int(os.getenv("TD_WEB_PORT", 9980))
 _OLLAMA_DEFAULT_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1")
 _OLLAMA_DEFAULT_PORT = int(os.getenv("OLLAMA_PORT", 11434))
 _TTS_DEFAULT_LANG = os.getenv("TTS_DEFAULT_LANG", "en")
-_TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "M1")
+_TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "F1")
 _TTS_PREWARM_ON_STARTUP = os.getenv("TTS_PREWARM_ON_STARTUP", "true").lower() == "true"
 
 _tts_engine: Any | None = None
@@ -348,6 +349,35 @@ def _prewarm_tts_engine() -> None:
         logger.warning("Supertonic TTS prewarm failed: %s", exc)
 
 
+def _play_audio_file(audio_path: Path) -> dict:
+    try:
+        if not audio_path.exists():
+            return {"ok": False, "error": f"audio file not found: {audio_path}"}
+
+        vlc_candidates = [
+            Path(r"C:\Program Files\VideoLAN\VLC\vlc.exe"),
+            Path(r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe"),
+        ]
+        for vlc_path in vlc_candidates:
+            if vlc_path.exists():
+                subprocess.Popen([str(vlc_path), "--play-and-exit", str(audio_path)])
+                return {"ok": True, "player": "vlc", "path": str(audio_path)}
+
+        if hasattr(os, "startfile"):
+            os.startfile(str(audio_path))  # type: ignore[attr-defined]
+            return {"ok": True, "player": "startfile", "path": str(audio_path)}
+
+        if os.name == "posix":
+            opener = "open" if Path("/usr/bin/open").exists() else "xdg-open"
+            subprocess.Popen([opener, str(audio_path)])
+            return {"ok": True, "player": opener, "path": str(audio_path)}
+
+        return {"ok": False, "error": "no audio player available", "path": str(audio_path)}
+    except Exception as exc:
+        logger.exception("Failed to play audio file: %s", audio_path)
+        return {"ok": False, "error": str(exc), "path": str(audio_path)}
+
+
 def _list_touchdesigner_processes() -> dict:
     try:
         processes: list[dict[str, str]] = []
@@ -411,9 +441,107 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     _ollama_host = getattr(config, "OLLAMA_HOST", None) or _OLLAMA_DEFAULT_HOST
     _ollama_port = getattr(config, "OLLAMA_PORT", None) or _OLLAMA_DEFAULT_PORT
     _ollama_url = f"http://{_ollama_host}:{_ollama_port}"
+    _startup_prompt = "Give me four sentences about the root of the mind."
+    _startup_tts_lang = getattr(config, "TTS_DEFAULT_LANG", None) or _TTS_DEFAULT_LANG
+    _startup_tts_voice = getattr(config, "TTS_DEFAULT_VOICE", None) or _TTS_DEFAULT_VOICE
+    _startup_selected_model: str | None = None
+    _startup_narration_task: asyncio.Task | None = None
+
+    async def _run_agent_startup_narration(trigger: str) -> None:
+        try:
+            # Align with the first heartbeat window.
+            await asyncio.sleep(1.0)
+            if not master_agent.is_running:
+                logger.info("Startup narration skipped: agent stopped before execution (trigger=%s).", trigger)
+                return
+
+            loop = asyncio.get_running_loop()
+            ollama_result = await loop.run_in_executor(
+                None,
+                _generate_ollama_reply,
+                _ollama_url,
+                _startup_prompt,
+                _startup_selected_model,
+            )
+            if not ollama_result.get("ok"):
+                logger.warning(
+                    "Startup narration Ollama step failed (trigger=%s): %s",
+                    trigger,
+                    ollama_result.get("error"),
+                )
+                return
+
+            reply_text = str(ollama_result.get("reply", "")).strip()
+            if not reply_text:
+                logger.warning("Startup narration produced empty text (trigger=%s).", trigger)
+                return
+
+            tts_result = await loop.run_in_executor(
+                None,
+                _synthesize_tts_audio_bytes,
+                reply_text,
+                _startup_tts_lang,
+                _startup_tts_voice,
+            )
+            if not tts_result.get("ok"):
+                logger.warning(
+                    "Startup narration TTS step failed (trigger=%s): %s",
+                    trigger,
+                    tts_result.get("error"),
+                )
+                return
+
+            output_dir = PROJECT_ROOT / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            output_path = output_dir / f"agent_startup_{ts}.wav"
+            latest_path = output_dir / "agent_startup_latest.wav"
+            audio_bytes = tts_result["audio_bytes"]
+            output_path.write_bytes(audio_bytes)
+            latest_path.write_bytes(audio_bytes)
+
+            play_result = await loop.run_in_executor(None, _play_audio_file, latest_path)
+            if not play_result.get("ok"):
+                logger.warning(
+                    "Startup narration audio saved but playback failed: %s",
+                    play_result.get("error"),
+                )
+
+            logger.info(
+                "Startup narration ready: model=%s voice=%s duration=%.2fs file=%s latest=%s player=%s",
+                ollama_result.get("model"),
+                tts_result.get("voice_name"),
+                float(tts_result.get("duration", 0.0)),
+                output_path,
+                latest_path,
+                play_result.get("player", "none"),
+            )
+
+            event_bus.publish(
+                {
+                    "kind": "stream",
+                    "address": "/agent/startup/audio",
+                    "params": [str(output_path), ollama_result.get("model", ""), reply_text],
+                    "source": "platform",
+                    "protocol": "internal",
+                    "direction": "outbound",
+                }
+            )
+        except asyncio.CancelledError:
+            logger.info("Startup narration task cancelled.")
+            raise
+        except Exception:
+            logger.exception("Unexpected startup narration failure.")
+
+    def _schedule_agent_startup_narration(trigger: str) -> None:
+        nonlocal _startup_narration_task
+        if _startup_narration_task is not None and not _startup_narration_task.done():
+            _startup_narration_task.cancel()
+        _startup_narration_task = asyncio.create_task(_run_agent_startup_narration(trigger))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        nonlocal _startup_narration_task
         root_logger = logging.getLogger()
         event_log_handler = EventBusLogHandler(event_bus)
         event_log_handler.setLevel(logging.INFO)
@@ -429,6 +557,12 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             loop.run_in_executor(None, _prewarm_tts_engine)
 
         yield
+        if _startup_narration_task is not None and not _startup_narration_task.done():
+            _startup_narration_task.cancel()
+            try:
+                await _startup_narration_task
+            except asyncio.CancelledError:
+                pass
         if master_agent.is_running:
             master_agent.stop()
         thread_manager.kill_all()
@@ -493,6 +627,9 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             agent_running,
         )
 
+        if agent_action == "start" and agent_changed and agent_running:
+            _schedule_agent_startup_narration("unreal_event")
+
         event_bus.publish(
             {
                 # SSE stream display fields (read by frontend incoming-signals panel)
@@ -546,6 +683,8 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     @app.post("/api/agent/start")
     async def start_agent():
         started = master_agent.start()
+        if started and master_agent.is_running:
+            _schedule_agent_startup_narration("api_start")
         return {
             "ok": True,
             "started": started,
@@ -581,6 +720,10 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
 
     @app.post("/api/agent/message")
     async def send_agent_message(payload: AgentMessagePayload):
+        nonlocal _startup_selected_model
+        if payload.selected_model and payload.selected_model.strip():
+            _startup_selected_model = payload.selected_model.strip()
+
         reply = master_agent.handle_human_message(payload.text, selected_model=payload.selected_model)
         intent = getattr(master_agent, "last_intent_decision", None)
         ollama = {
