@@ -15,6 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+import httpx
 from fastapi import Body, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -133,6 +134,12 @@ class UnrealEventPayload(BaseModel):
     timestamp_utc: str = Field(default="")
     session_id: str | None = Field(default=None, max_length=128)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SendToUnrealPayload(BaseModel):
+    message: str = Field(default="Hello from platform", max_length=2048)
+    unreal_host: str = Field(default="127.0.0.1", max_length=255)
+    unreal_port: int = Field(default=30080, ge=1024, le=65535)
 
 
 def _post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
@@ -472,9 +479,15 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
 
         event_bus.publish(
             {
+                # SSE stream display fields (read by frontend incoming-signals panel)
                 "kind": "unreal_event",
-                "request_id": request_id,
+                "address": f"/unreal/{payload.event}",
+                "params": [payload.message] if payload.message else [],
+                "protocol": "unreal",
+                "direction": "inbound",
                 "source": payload.source,
+                # Full Unreal payload preserved for consumers that need it
+                "request_id": request_id,
                 "event": payload.event,
                 "message": payload.message,
                 "timestamp_utc": payload.timestamp_utc,
@@ -490,6 +503,26 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             "source": payload.source,
             "event": payload.event,
         }
+
+    @app.post("/api/platform/send-to-unreal")
+    async def send_to_unreal(payload: SendToUnrealPayload):
+        url = f"http://{payload.unreal_host}:{payload.unreal_port}/notify"
+        body = {"message": payload.message}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(url, json=body)
+            resp.raise_for_status()
+            logger.info("Sent to Unreal /notify: %r -> %d", payload.message, resp.status_code)
+            return {"ok": True, "message": payload.message, "unreal_status": resp.status_code}
+        except httpx.ConnectError:
+            logger.warning("Unreal not reachable at %s", url)
+            return JSONResponse(status_code=503, content={"ok": False, "error": "Unreal not reachable", "url": url})
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Unreal /notify returned %d", exc.response.status_code)
+            return JSONResponse(status_code=502, content={"ok": False, "error": f"Unreal returned {exc.response.status_code}"})
+        except Exception as exc:
+            logger.exception("Unexpected error sending to Unreal")
+            return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
 
     @app.post("/api/agent/start")
     async def start_agent():

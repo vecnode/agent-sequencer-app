@@ -16,6 +16,7 @@ const btnBroadcastToggle = document.getElementById('btn-broadcast-toggle');
 const btnRunExampleToe = document.getElementById('btn-run-example-toe');
 const btnCheckTd = document.getElementById('btn-check-td');
 const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
+const btnSendUe5 = document.getElementById('btn-send-ue5');
 const btnCheckOllama = document.getElementById('btn-check-ollama');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
@@ -622,6 +623,37 @@ async function sendTdTestData() {
 	}
 }
 
+function setUe5SendStatus(text, cssClass) {
+	const el = document.getElementById('ue5-send-status');
+	if (el) { el.textContent = text; el.className = cssClass; }
+}
+
+// Sends a message to Unreal Engine via the platform /notify bridge.
+async function sendToUe5() {
+	btnSendUe5.disabled = true;
+	setUe5SendStatus('SENDING', 'agent-status-on');
+	try {
+		const res = await fetch('/api/platform/send-to-unreal', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ message: 'Hello from platform' }),
+		});
+		const json = await res.json();
+		if (res.ok && json.ok) {
+			pushTerminalLine('[UE5] Message sent to Unreal HUD', 'terminal-log-info');
+			setUe5SendStatus('SENT', 'agent-status-on');
+		} else {
+			pushTerminalLine(`[UE5] ERROR: ${json.error || 'request failed'}`, 'terminal-log-error');
+			setUe5SendStatus('ERROR', 'agent-status-off');
+		}
+	} catch (_) {
+		pushTerminalLine('[UE5] ERROR sending to Unreal (network/unknown)', 'terminal-log-error');
+		setUe5SendStatus('ERROR', 'agent-status-off');
+	} finally {
+		btnSendUe5.disabled = false;
+	}
+}
+
 function setOllamaStatus(isUp, modelCount) {
 	ollamaStatus.textContent = isUp ? 'ONLINE' : 'OFFLINE';
 	ollamaStatus.className = isUp ? 'agent-status-on' : 'agent-status-off';
@@ -726,6 +758,7 @@ btnBroadcastToggle.addEventListener('click', toggleBroadcast);
 btnRunExampleToe.addEventListener('click', runExampleToe);
 btnCheckTd.addEventListener('click', checkTdProcesses);
 btnSendTdTestData.addEventListener('click', sendTdTestData);
+btnSendUe5.addEventListener('click', sendToUe5);
 btnCheckOllama.addEventListener('click', checkOllamaStatus);
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {
