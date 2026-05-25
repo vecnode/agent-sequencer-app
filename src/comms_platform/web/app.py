@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from fastapi import Body, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -123,6 +124,15 @@ class TtsPayload(BaseModel):
     text: str = Field(min_length=1)
     lang: str = Field(default=_TTS_DEFAULT_LANG, min_length=2, max_length=8)
     voice_name: str = Field(default=_TTS_DEFAULT_VOICE, min_length=1, max_length=32)
+
+
+class UnrealEventPayload(BaseModel):
+    source: str = Field(default="unreal", min_length=1, max_length=64)
+    event: str = Field(min_length=1, max_length=128)
+    message: str = Field(default="", max_length=2048)
+    timestamp_utc: str = Field(default="")
+    session_id: str | None = Field(default=None, max_length=128)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def _post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
@@ -446,6 +456,39 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             "agent_running": master_agent.is_running,
             "agent_heartbeats": master_agent.heartbeat_count,
             "agent_broadcast": master_agent.broadcast_enabled,
+        }
+
+    @app.post("/api/unreal/event")
+    async def ingest_unreal_event(payload: UnrealEventPayload):
+        request_id = str(uuid4())
+
+        logger.info(
+            "Unreal event [%s] source=%s event=%s session_id=%s",
+            request_id,
+            payload.source,
+            payload.event,
+            payload.session_id or "none",
+        )
+
+        event_bus.publish(
+            {
+                "kind": "unreal_event",
+                "request_id": request_id,
+                "source": payload.source,
+                "event": payload.event,
+                "message": payload.message,
+                "timestamp_utc": payload.timestamp_utc,
+                "session_id": payload.session_id,
+                "metadata": payload.metadata,
+            }
+        )
+
+        return {
+            "ok": True,
+            "accepted": True,
+            "request_id": request_id,
+            "source": payload.source,
+            "event": payload.event,
         }
 
     @app.post("/api/agent/start")

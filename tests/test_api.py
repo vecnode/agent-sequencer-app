@@ -114,6 +114,44 @@ def test_status_endpoint_reports_server_active():
     )
 
 
+def test_unreal_event_endpoint_accepts_payload():
+    payload = {
+        "source": "unreal-editor",
+        "event": "key_pressed",
+        "message": "hello world 2",
+        "timestamp_utc": "2026-05-25T12:00:00Z",
+        "session_id": "characters-local",
+        "metadata": {"map": "ThirdPersonMap", "build": "Development"},
+    }
+
+    with _build_client() as client:
+        response = client.post("/api/unreal/event", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["accepted"] is True
+    assert body["source"] == payload["source"]
+    assert body["event"] == payload["event"]
+    assert isinstance(body["request_id"], str)
+    assert len(body["request_id"]) > 0
+    _log_test(
+        "POST /api/unreal/event [success]",
+        f"status_code={response.status_code}, accepted={body['accepted']}, request_id={body['request_id']}",
+    )
+
+
+def test_unreal_event_endpoint_validates_required_event():
+    with _build_client() as client:
+        response = client.post("/api/unreal/event", json={"source": "unreal-editor", "message": "x"})
+
+    assert response.status_code == 422
+    _log_test(
+        "POST /api/unreal/event [validation_error]",
+        f"status_code={response.status_code}",
+    )
+
+
 def test_signals_publish_accepted():
     gateway = StubSignalGateway()
     app = create_app(
