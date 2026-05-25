@@ -469,12 +469,28 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     async def ingest_unreal_event(payload: UnrealEventPayload):
         request_id = str(uuid4())
 
+        if master_agent.is_running:
+            agent_action = "stop"
+            agent_changed = master_agent.stop()
+        else:
+            agent_action = "start"
+            agent_changed = master_agent.start()
+
+        agent_running = master_agent.is_running
+
         logger.info(
             "Unreal event [%s] source=%s event=%s session_id=%s",
             request_id,
             payload.source,
             payload.event,
             payload.session_id or "none",
+        )
+        logger.info(
+            "Agent toggled by Unreal event [%s]: action=%s changed=%s running=%s",
+            request_id,
+            agent_action,
+            agent_changed,
+            agent_running,
         )
 
         event_bus.publish(
@@ -502,6 +518,9 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             "request_id": request_id,
             "source": payload.source,
             "event": payload.event,
+            "agent_action": agent_action,
+            "agent_changed": agent_changed,
+            "agent_running": agent_running,
         }
 
     @app.post("/api/platform/send-to-unreal")
