@@ -4,6 +4,19 @@ name = "comms-platform"
 description = "Professional multimodal communications platform for agent orchestration"
 version = "0.1.0"
 requires-python = ">=3.9"
+dependencies = [
+	"torch>=2.2.0",
+	"transformers>=4.40.0",
+	"diffusers>=0.30.0",
+	"accelerate>=0.33.0",
+	"safetensors>=0.4.5",
+	"Pillow>=10.3.0",
+	"supertonic",
+	"python-osc>=1.8.0",
+	"python-dotenv>=1.0.0",
+	"fastapi>=0.111.0",
+	"uvicorn[standard]>=0.29.0",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

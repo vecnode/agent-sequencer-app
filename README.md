@@ -84,9 +84,9 @@ uv run pytest -q -s tests/test_api.py
 <details>
 <summary>Block 06 - Inference</summary>
 
-- Loads or unloads the SuperTonic 3 TTS engine.
-- Shows a quick status indicator for loaded/not loaded.
-- Keeps the engine ready for fast inference when turned on.
+- Hosts two inference modules in a single control surface.
+- SuperTonic 3: load/unload TTS engine and monitor engine status.
+- SDXL Base 1: load/unload image pipeline, submit prompts, and preview generated images.
 </details>
 
 <details>
@@ -122,6 +122,11 @@ Current API endpoints and capabilities:
 - `POST /api/tts/engine/on` — loads SuperTonic 3 into memory for fast inference
 - `POST /api/tts/engine/off` — unloads SuperTonic 3 from memory
 - `POST /api/tts/synthesize` — synthesizes TTS audio using SuperTonic 3 and returns WAV audio
+
+- `GET /api/sdxl/status` — reports whether SDXL Base 1 is loaded
+- `POST /api/sdxl/engine/on` — loads SDXL Base 1 pipeline into memory
+- `POST /api/sdxl/engine/off` — unloads SDXL Base 1 pipeline from memory
+- `POST /api/sdxl/generate` — generates an image from prompt and returns preview payload + output file metadata
 
 
 

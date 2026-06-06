@@ -38,9 +38,14 @@ _OLLAMA_DEFAULT_PORT = int(os.getenv("OLLAMA_PORT", 11434))
 _TTS_DEFAULT_LANG = os.getenv("TTS_DEFAULT_LANG", "en")
 _TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "F1")
 _TTS_PREWARM_ON_STARTUP = os.getenv("TTS_PREWARM_ON_STARTUP", "true").lower() == "true"
+_SDXL_MODEL_ID = os.getenv("SDXL_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
+_SDXL_DEFAULT_GUIDANCE = float(os.getenv("SDXL_DEFAULT_GUIDANCE", "7.0"))
+_SDXL_DEFAULT_STEPS = int(os.getenv("SDXL_DEFAULT_STEPS", "30"))
 
 _tts_engine: Any | None = None
 _tts_engine_lock = threading.Lock()
+_sdxl_pipeline: Any | None = None
+_sdxl_engine_lock = threading.RLock()
 
 
 class EventBus:
@@ -127,6 +132,13 @@ class TtsPayload(BaseModel):
     text: str = Field(min_length=1)
     lang: str = Field(default=_TTS_DEFAULT_LANG, min_length=2, max_length=8)
     voice_name: str = Field(default=_TTS_DEFAULT_VOICE, min_length=1, max_length=32)
+
+
+class SdxlGeneratePayload(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    guidance_scale: float = Field(default=_SDXL_DEFAULT_GUIDANCE, ge=1.0, le=20.0)
+    num_inference_steps: int = Field(default=_SDXL_DEFAULT_STEPS, ge=5, le=75)
+    seed: int | None = Field(default=None, ge=0, le=4294967295)
 
 
 class UnrealEventPayload(BaseModel):
@@ -466,6 +478,158 @@ def _check_tts_engine_status(voice_name: str) -> dict:
             "ok": False,
             "engine": "SuperTonic 3",
             "voice_name": voice_name,
+            "error": str(exc),
+        }
+
+
+def _get_sdxl_runtime() -> tuple[Any, str, Any]:
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    return torch, device, dtype
+
+
+def _release_cuda_cache() -> None:
+    try:
+        import gc
+
+        gc.collect()
+    except Exception:
+        pass
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def _get_sdxl_pipeline() -> Any:
+    global _sdxl_pipeline
+    with _sdxl_engine_lock:
+        if _sdxl_pipeline is None:
+            from diffusers import DiffusionPipeline
+
+            _, device, dtype = _get_sdxl_runtime()
+            logger.info("Initializing SDXL Base 1 pipeline on %s (first load may take several minutes).", device)
+            _sdxl_pipeline = DiffusionPipeline.from_pretrained(_SDXL_MODEL_ID, torch_dtype=dtype)
+            _sdxl_pipeline = _sdxl_pipeline.to(device)
+            logger.info("SDXL Base 1 pipeline initialized on %s.", device)
+        return _sdxl_pipeline
+
+
+def _set_sdxl_engine_loaded(loaded: bool) -> dict:
+    global _sdxl_pipeline
+    with _sdxl_engine_lock:
+        if loaded:
+            try:
+                _get_sdxl_pipeline()
+                _, device, _ = _get_sdxl_runtime()
+                return {
+                    "ok": True,
+                    "engine": "SDXL Base 1",
+                    "loaded": True,
+                    "model_id": _SDXL_MODEL_ID,
+                    "device": device,
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "engine": "SDXL Base 1",
+                    "loaded": False,
+                    "model_id": _SDXL_MODEL_ID,
+                    "error": str(exc),
+                }
+
+        _sdxl_pipeline = None
+        _release_cuda_cache()
+        _, device, _ = _get_sdxl_runtime()
+        return {
+            "ok": True,
+            "engine": "SDXL Base 1",
+            "loaded": False,
+            "model_id": _SDXL_MODEL_ID,
+            "device": device,
+        }
+
+
+def _get_sdxl_engine_loaded_state() -> dict:
+    with _sdxl_engine_lock:
+        _, device, _ = _get_sdxl_runtime()
+        return {
+            "ok": True,
+            "engine": "SDXL Base 1",
+            "loaded": _sdxl_pipeline is not None,
+            "model_id": _SDXL_MODEL_ID,
+            "device": device,
+        }
+
+
+def _generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps: int, seed: int | None) -> dict:
+    try:
+        prompt = str(prompt or "").strip()
+        if not prompt:
+            return {
+                "ok": False,
+                "error": "prompt_required",
+                "engine": "SDXL Base 1",
+            }
+
+        torch, device, _ = _get_sdxl_runtime()
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=device).manual_seed(int(seed))
+
+        started_at = datetime.now(timezone.utc)
+        pipeline = _get_sdxl_pipeline()
+        image = pipeline(
+            prompt=prompt,
+            guidance_scale=float(guidance_scale),
+            num_inference_steps=int(num_inference_steps),
+            generator=generator,
+        ).images[0]
+        elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
+
+        output_dir = PROJECT_ROOT / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_path = output_dir / f"sdxl_{ts}.png"
+        latest_path = output_dir / "sdxl_latest.png"
+        image.save(output_path, format="PNG")
+        image.save(latest_path, format="PNG")
+
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        import base64
+
+        image_base64 = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        if device == "cuda":
+            torch.cuda.empty_cache()
+
+        return {
+            "ok": True,
+            "engine": "SDXL Base 1",
+            "loaded": True,
+            "model_id": _SDXL_MODEL_ID,
+            "device": device,
+            "image_id": str(uuid4()),
+            "image_base64": image_base64,
+            "output_file": str(output_path),
+            "latest_file": str(latest_path),
+            "duration_seconds": elapsed_seconds,
+            "guidance_scale": float(guidance_scale),
+            "num_inference_steps": int(num_inference_steps),
+            "seed": seed,
+        }
+    except Exception as exc:
+        logger.warning("SDXL generation failed: %s", exc)
+        return {
+            "ok": False,
+            "engine": "SDXL Base 1",
             "error": str(exc),
         }
 
@@ -914,6 +1078,41 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, _set_tts_engine_loaded, False)
         return result
+
+    @app.get("/api/sdxl/status")
+    async def sdxl_status():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _get_sdxl_engine_loaded_state)
+        return result
+
+    @app.post("/api/sdxl/engine/on")
+    async def sdxl_engine_on():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _set_sdxl_engine_loaded, True)
+        if result.get("ok"):
+            return result
+        return JSONResponse(status_code=503, content=result)
+
+    @app.post("/api/sdxl/engine/off")
+    async def sdxl_engine_off():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _set_sdxl_engine_loaded, False)
+        return result
+
+    @app.post("/api/sdxl/generate")
+    async def sdxl_generate(payload: SdxlGeneratePayload):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            _generate_sdxl_image,
+            payload.prompt,
+            payload.guidance_scale,
+            payload.num_inference_steps,
+            payload.seed,
+        )
+        if result.get("ok"):
+            return result
+        return JSONResponse(status_code=503, content=result)
 
     @app.post("/api/touchdesigner/run-example")
     async def run_touchdesigner_example():

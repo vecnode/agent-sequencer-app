@@ -21,6 +21,9 @@ const btnOpenOllama = document.getElementById('btn-open-ollama');
 const btnInferenceToggle = document.getElementById('btn-inference-toggle');
 const inferenceDot = document.getElementById('inference-dot');
 const inferenceStatus = document.getElementById('inference-status');
+const btnSdxlToggle = document.getElementById('btn-sdxl-toggle');
+const sdxlDot = document.getElementById('sdxl-dot');
+const sdxlStatus = document.getElementById('sdxl-status');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
 const agentStateSectionSelect = document.getElementById('agent-state-section');
@@ -74,10 +77,20 @@ const agentState = {
 		selected_model: null,
 	},
 	inference: {
-		engine: 'SuperTonic 3',
-		loaded: false,
-		status: 'OFFLINE',
-		last_error: null,
+		tts: {
+			engine: 'SuperTonic 3',
+			loaded: false,
+			status: 'OFFLINE',
+			last_error: null,
+		},
+		sdxl: {
+			engine: 'SDXL Base 1',
+			loaded: false,
+			status: 'OFFLINE',
+			last_error: null,
+			last_image_id: null,
+			last_duration_seconds: null,
+		},
 	},
 	ui: {
 		theme: 'light',
@@ -295,6 +308,8 @@ async function refreshAgentStatePanel() {
 	agentState.connections.sse_status = dot.classList.contains('connected') ? 'connected' : 'reconnecting';
 	await pollStatus();
 	await checkOllamaStatus(true);
+	await syncTtsInferenceStatus(true);
+	await syncSdxlStatus(true);
 	renderAgentState();
 }
 
@@ -733,7 +748,7 @@ async function checkOllamaStatus(silent = false) {
 	}
 }
 
-function setInferenceStatus(isReady, error = null) {
+function setTtsInferenceStatus(isReady, error = null) {
 	if (inferenceDot) {
 		inferenceDot.className = isReady ? 'dot connected' : 'dot disconnected';
 	}
@@ -747,21 +762,21 @@ function setInferenceStatus(isReady, error = null) {
 		btnInferenceToggle.classList.toggle('agent-btn-off', !isReady);
 		btnInferenceToggle.setAttribute('aria-pressed', String(isReady));
 	}
-	agentState.inference.loaded = isReady;
-	agentState.inference.status = isReady ? 'ONLINE' : 'OFFLINE';
-	agentState.inference.last_error = error;
+	agentState.inference.tts.loaded = isReady;
+	agentState.inference.tts.status = isReady ? 'ONLINE' : 'OFFLINE';
+	agentState.inference.tts.last_error = error;
 	renderAgentState();
 }
 
-async function syncInferenceStatus(silent = false) {
+async function syncTtsInferenceStatus(silent = false) {
 	if (btnInferenceToggle) {
 		btnInferenceToggle.disabled = true;
 	}
 	try {
 		const res = await fetch('/api/tts/status');
 		const json = await res.json();
-		const isReady = Boolean(res.ok && json.ok);
-		setInferenceStatus(isReady, json.error || null);
+		const isReady = Boolean(res.ok && json.ok && json.loaded);
+		setTtsInferenceStatus(isReady, json.error || null);
 		if (!silent) {
 			pushTerminalLine(
 				isReady ? '[INFERENCE] SuperTonic 3 is loaded (ON)' : '[INFERENCE] SuperTonic 3 is unloaded (OFF)',
@@ -769,7 +784,7 @@ async function syncInferenceStatus(silent = false) {
 			);
 		}
 	} catch (err) {
-		setInferenceStatus(false, String(err));
+		setTtsInferenceStatus(false, String(err));
 		if (!silent) {
 			pushTerminalLine(`[INFERENCE] ERROR reading engine state (${err})`, 'terminal-log-error');
 		}
@@ -780,10 +795,10 @@ async function syncInferenceStatus(silent = false) {
 	}
 }
 
-async function toggleInferenceEngine() {
+async function toggleTtsInferenceEngine() {
 	if (!btnInferenceToggle) return;
 	btnInferenceToggle.disabled = true;
-	const shouldEnable = !agentState.inference.loaded;
+	const shouldEnable = !agentState.inference.tts.loaded;
 	const url = shouldEnable ? '/api/tts/engine/on' : '/api/tts/engine/off';
 	pushTerminalLine(
 		shouldEnable ? '[INFERENCE] Loading SuperTonic 3...' : '[INFERENCE] Unloading SuperTonic 3...',
@@ -794,21 +809,100 @@ async function toggleInferenceEngine() {
 		const json = await res.json();
 		if (!res.ok) {
 			const errorMessage = json.error || `request failed (${res.status})`;
-			setInferenceStatus(false, errorMessage);
+			setTtsInferenceStatus(false, errorMessage);
 			pushTerminalLine(`[INFERENCE] ERROR (${errorMessage})`, 'terminal-log-error');
 			return;
 		}
 		const loaded = Boolean(json.loaded);
-		setInferenceStatus(loaded, null);
+		setTtsInferenceStatus(loaded, null);
 		pushTerminalLine(
 			loaded ? '[INFERENCE] SuperTonic 3 loaded (ON)' : '[INFERENCE] SuperTonic 3 unloaded (OFF)',
 			'terminal-log-info'
 		);
 	} catch (err) {
-		setInferenceStatus(false, String(err));
+		setTtsInferenceStatus(false, String(err));
 		pushTerminalLine(`[INFERENCE] ERROR (${err})`, 'terminal-log-error');
 	} finally {
 		btnInferenceToggle.disabled = false;
+	}
+}
+
+function setSdxlStatus(isReady, error = null) {
+	if (sdxlDot) {
+		sdxlDot.className = isReady ? 'dot connected' : 'dot disconnected';
+	}
+	if (sdxlStatus) {
+		sdxlStatus.textContent = isReady ? 'ONLINE' : 'OFFLINE';
+		sdxlStatus.className = isReady ? 'agent-status-on' : 'agent-status-off';
+	}
+	if (btnSdxlToggle) {
+		btnSdxlToggle.textContent = isReady ? 'SDXL ON' : 'SDXL OFF';
+		btnSdxlToggle.classList.toggle('agent-btn-on', isReady);
+		btnSdxlToggle.classList.toggle('agent-btn-off', !isReady);
+		btnSdxlToggle.setAttribute('aria-pressed', String(isReady));
+	}
+	agentState.inference.sdxl.loaded = isReady;
+	agentState.inference.sdxl.status = isReady ? 'ONLINE' : 'OFFLINE';
+	agentState.inference.sdxl.last_error = error;
+	renderAgentState();
+}
+
+async function syncSdxlStatus(silent = false) {
+	if (btnSdxlToggle) {
+		btnSdxlToggle.disabled = true;
+	}
+	try {
+		const res = await fetch('/api/sdxl/status');
+		const json = await res.json();
+		const isReady = Boolean(res.ok && json.ok && json.loaded);
+		setSdxlStatus(isReady, json.error || null);
+		if (!silent) {
+			pushTerminalLine(
+				isReady ? '[SDXL] SDXL Base 1 is loaded (ON)' : '[SDXL] SDXL Base 1 is unloaded (OFF)',
+				'terminal-log-info'
+			);
+		}
+	} catch (err) {
+		setSdxlStatus(false, String(err));
+		if (!silent) {
+			pushTerminalLine(`[SDXL] ERROR reading engine state (${err})`, 'terminal-log-error');
+		}
+	} finally {
+		if (btnSdxlToggle) {
+			btnSdxlToggle.disabled = false;
+		}
+	}
+}
+
+async function toggleSdxlEngine() {
+	if (!btnSdxlToggle) return;
+	btnSdxlToggle.disabled = true;
+	const shouldEnable = !agentState.inference.sdxl.loaded;
+	const url = shouldEnable ? '/api/sdxl/engine/on' : '/api/sdxl/engine/off';
+	pushTerminalLine(
+		shouldEnable ? '[SDXL] Loading SDXL Base 1...' : '[SDXL] Unloading SDXL Base 1...',
+		'terminal-log-info'
+	);
+	try {
+		const res = await fetch(url, { method: 'POST' });
+		const json = await res.json();
+		if (!res.ok) {
+			const errorMessage = json.error || `request failed (${res.status})`;
+			setSdxlStatus(false, errorMessage);
+			pushTerminalLine(`[SDXL] ERROR (${errorMessage})`, 'terminal-log-error');
+			return;
+		}
+		const loaded = Boolean(json.loaded);
+		setSdxlStatus(loaded, null);
+		pushTerminalLine(
+			loaded ? '[SDXL] SDXL Base 1 loaded (ON)' : '[SDXL] SDXL Base 1 unloaded (OFF)',
+			'terminal-log-info'
+		);
+	} catch (err) {
+		setSdxlStatus(false, String(err));
+		pushTerminalLine(`[SDXL] ERROR (${err})`, 'terminal-log-error');
+	} finally {
+		btnSdxlToggle.disabled = false;
 	}
 }
 
@@ -878,7 +972,10 @@ if (btnOpenOllama) {
 	});
 }
 if (btnInferenceToggle) {
-	btnInferenceToggle.addEventListener('click', toggleInferenceEngine);
+	btnInferenceToggle.addEventListener('click', toggleTtsInferenceEngine);
+}
+if (btnSdxlToggle) {
+	btnSdxlToggle.addEventListener('click', toggleSdxlEngine);
 }
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {
@@ -901,4 +998,5 @@ userInputText.addEventListener('keydown', (e) => {
 // --- Initial Bootstrapping -------------------------------------------------
 
 renderAgentState();
-syncInferenceStatus(true);
+syncTtsInferenceStatus(true);
+syncSdxlStatus(true);

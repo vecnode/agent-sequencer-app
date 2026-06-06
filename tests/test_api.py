@@ -428,3 +428,120 @@ def test_ollama_status_endpoint_connection_error():
         "GET /api/ollama/status [connection_error]",
         f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
     )
+
+
+def test_sdxl_status_endpoint_reports_unloaded_by_default():
+    with _build_client() as client:
+        response = client.get("/api/sdxl/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["engine"] == "SDXL Base 1"
+    assert "loaded" in body
+    _log_test(
+        "GET /api/sdxl/status",
+        f"status_code={response.status_code}, engine={body['engine']}, loaded={body['loaded']}",
+    )
+
+
+def test_sdxl_engine_on_endpoint_success():
+    mock_payload = {
+        "ok": True,
+        "engine": "SDXL Base 1",
+        "loaded": True,
+        "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+        "device": "cpu",
+    }
+    with _build_client() as client:
+        with patch("comms_platform.web.app._set_sdxl_engine_loaded", return_value=mock_payload):
+            response = client.post("/api/sdxl/engine/on")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["loaded"] is True
+    _log_test(
+        "POST /api/sdxl/engine/on",
+        f"status_code={response.status_code}, ok={body['ok']}, loaded={body['loaded']}",
+    )
+
+
+def test_sdxl_engine_off_endpoint_success():
+    mock_payload = {
+        "ok": True,
+        "engine": "SDXL Base 1",
+        "loaded": False,
+        "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+        "device": "cpu",
+    }
+    with _build_client() as client:
+        with patch("comms_platform.web.app._set_sdxl_engine_loaded", return_value=mock_payload):
+            response = client.post("/api/sdxl/engine/off")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["loaded"] is False
+    _log_test(
+        "POST /api/sdxl/engine/off",
+        f"status_code={response.status_code}, ok={body['ok']}, loaded={body['loaded']}",
+    )
+
+
+def test_sdxl_generate_endpoint_success():
+    mock_payload = {
+        "ok": True,
+        "engine": "SDXL Base 1",
+        "loaded": True,
+        "image_id": "abc123",
+        "image_base64": "data:image/png;base64,ZmFrZQ==",
+        "duration_seconds": 1.2,
+    }
+    with _build_client() as client:
+        with patch("comms_platform.web.app._generate_sdxl_image", return_value=mock_payload):
+            response = client.post(
+                "/api/sdxl/generate",
+                json={
+                    "prompt": "a cinematic desert city",
+                    "guidance_scale": 7.0,
+                    "num_inference_steps": 30,
+                },
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["engine"] == "SDXL Base 1"
+    assert body["image_id"] == "abc123"
+    _log_test(
+        "POST /api/sdxl/generate [success]",
+        f"status_code={response.status_code}, ok={body['ok']}, image_id={body['image_id']}",
+    )
+
+
+def test_sdxl_generate_endpoint_error():
+    mock_payload = {
+        "ok": False,
+        "engine": "SDXL Base 1",
+        "error": "pipeline_unavailable",
+    }
+    with _build_client() as client:
+        with patch("comms_platform.web.app._generate_sdxl_image", return_value=mock_payload):
+            response = client.post(
+                "/api/sdxl/generate",
+                json={
+                    "prompt": "a cinematic desert city",
+                    "guidance_scale": 7.0,
+                    "num_inference_steps": 30,
+                },
+            )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["ok"] is False
+    assert "error" in body
+    _log_test(
+        "POST /api/sdxl/generate [error]",
+        f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
+    )

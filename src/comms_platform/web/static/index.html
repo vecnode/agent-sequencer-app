@@ -63,8 +63,8 @@
             <div class="widget-title">Block 04 Engines</div>
             <div class="widget-settings-body">
               <div class="engine-tabs" role="tablist" aria-label="Engine tabs">
-                <button class="engine-tab active" data-engine-tab="touchdesigner" type="button" role="tab" aria-selected="true">TouchDesigner</button>
-                <button class="engine-tab" data-engine-tab="unreal" type="button" role="tab" aria-selected="false">Unreal Engine</button>
+                <button class="engine-tab active" data-engine-tab="touchdesigner" type="button" role="tab" aria-selected="true">TouchD</button>
+                <button class="engine-tab" data-engine-tab="unreal" type="button" role="tab" aria-selected="false">UE5</button>
                 <button class="engine-tab" data-engine-tab="ollama" type="button" role="tab" aria-selected="false">Ollama</button>
               </div>
 
@@ -105,7 +105,7 @@
           </div>
           <!-- Block 05: Ollama service health and model selection. -->
           <div class="dashboard-block widget-panel widget-ollama" aria-label="Widget ollama">
-            <div class="widget-title">Block 05 Ollama</div>
+            <div class="widget-title">Block 05</div>
             <div class="widget-ollama-body">
               <div class="widget-settings-status">Empty</div>
             </div>
@@ -114,12 +114,20 @@
           <div class="dashboard-block widget-panel widget-ops" aria-label="Widget operations">
             <div class="widget-title">Block 06 Inference</div>
             <div class="widget-inference-body">
-              <div class="widget-settings-status widget-inference-status">
-                <span id="inference-dot" class="dot disconnected"></span>
-                SuperTonic 3: <span id="inference-status" class="agent-status-off">OFFLINE</span>
+              <div class="inference-rows">
+                <div class="widget-settings-status widget-inference-status">
+                  <span id="inference-dot" class="dot disconnected"></span>
+                  SuperTonic 3: <span id="inference-status" class="agent-status-off">OFFLINE</span>
+                </div>
+                <div class="widget-settings-status widget-inference-status">
+                  <span id="sdxl-dot" class="dot disconnected"></span>
+                  SDXL Base 1: <span id="sdxl-status" class="agent-status-off">OFFLINE</span>
+                </div>
               </div>
-              <div class="td-actions">
+
+              <div class="td-actions inference-toggles">
                 <button id="btn-inference-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTS OFF</button>
+                <button id="btn-sdxl-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">SDXL OFF</button>
               </div>
             </div>
           </div>
@@ -145,6 +153,7 @@
                 <option value="connections">Connections</option>
                 <option value="touchdesigner">TouchDesigner</option>
                 <option value="ollama">Ollama</option>
+                <option value="inference">Inference</option>
                 <option value="ui">UI</option>
               </select>
             </div>
