@@ -103,11 +103,30 @@
               </div>
             </div>
           </div>
-          <!-- Block 05: Ollama service health and model selection. -->
-          <div class="dashboard-block widget-panel widget-ollama" aria-label="Widget ollama">
-            <div class="widget-title">Block 05</div>
-            <div class="widget-ollama-body">
-              <div class="widget-settings-status">Empty</div>
+          <!-- Block 05: media viewer for latest generated outputs. -->
+          <div class="dashboard-block widget-panel widget-ollama" aria-label="Widget media viewer">
+            <div class="widget-title">Block 05 Media Viewer</div>
+            <div class="widget-media-body">
+              <div class="widget-media-toolbar">
+                <button id="btn-media-refresh" class="agent-btn settings-btn" type="button">Refresh</button>
+              </div>
+              <div class="widget-media-cards">
+                <section class="widget-media-card" aria-label="Image media card">
+                  <div class="widget-media-image-wrap" aria-label="Latest image preview">
+                    <img id="media-image" class="widget-media-image" alt="Latest SDXL image" />
+                  </div>
+                  <div id="media-image-path" class="widget-media-path">Path: not available</div>
+                  <button id="btn-media-open-image" class="agent-btn settings-btn" type="button">Open Image</button>
+                </section>
+
+                <section class="widget-media-card" aria-label="Audio media card">
+                  <audio id="media-audio" class="widget-media-audio" controls preload="metadata">
+                    Your browser does not support audio playback. Use Open Audio.
+                  </audio>
+                  <div id="media-audio-path" class="widget-media-path">Path: not available</div>
+                  <button id="btn-media-open-audio" class="agent-btn settings-btn" type="button">Open Audio</button>
+                </section>
+              </div>
             </div>
           </div>
           <!-- Block 06: reserved inference surface for future controls. -->
@@ -133,9 +152,18 @@
               </div>
             </div>
           </div>
-          <!-- Block 07: full-width operator input area for sending messages to the agent. -->
+
+          <!-- Block 07: reserved panel beside inference block. -->
+          <div class="dashboard-block widget-panel widget-block-07" aria-label="Widget block 07">
+            <div class="widget-title">Block 07</div>
+            <div class="widget-block-07-body">
+              <div class="widget-settings-status">Reserved</div>
+            </div>
+          </div>
+
+          <!-- Block 08: full-width operator input area for sending messages to the agent. -->
           <div class="dashboard-block widget-panel widget-user-input" aria-label="Widget user input">
-            <div class="widget-title">Block 07 User Input</div>
+            <div class="widget-title">Block 08 User Input</div>
             <div class="widget-user-input-body">
               <textarea id="user-input-text" class="widget-input" placeholder="Type your instruction or payload here..."></textarea>
               <button id="btn-user-input-send" class="agent-btn settings-btn" type="button">Send</button>

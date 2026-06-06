@@ -26,6 +26,13 @@ const btnTestTts = document.getElementById('btn-test-tts');
 const btnTestTti = document.getElementById('btn-test-tti');
 const sdxlDot = document.getElementById('sdxl-dot');
 const sdxlStatus = document.getElementById('sdxl-status');
+const btnMediaRefresh = document.getElementById('btn-media-refresh');
+const btnMediaOpenImage = document.getElementById('btn-media-open-image');
+const btnMediaOpenAudio = document.getElementById('btn-media-open-audio');
+const mediaImage = document.getElementById('media-image');
+const mediaAudio = document.getElementById('media-audio');
+const mediaImagePath = document.getElementById('media-image-path');
+const mediaAudioPath = document.getElementById('media-audio-path');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
 const agentStateSectionSelect = document.getElementById('agent-state-section');
@@ -105,6 +112,8 @@ const agentState = {
 let count   = 0;
 let paused  = false;
 let agentRunning = false;
+let latestMediaImageUrl = null;
+let latestMediaAudioUrl = null;
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
 const THEME_STORAGE_KEY = 'comms-platform-theme';
@@ -916,16 +925,17 @@ async function testTtsRender() {
 	}
 
 	btnTestTts.disabled = true;
-	pushTerminalLine('[TTS] Running test synthesis: "hello world"...', 'terminal-log-info');
+	pushTerminalLine('[TTS] Running synthesis: "hello world"...', 'terminal-log-info');
 	try {
 		const res = await fetch('/api/tts/test', { method: 'POST' });
 		const json = await res.json();
 		if (!res.ok || !json.ok) {
 			throw new Error(json.error || `request failed (${res.status})`);
 		}
-		pushTerminalLine(`[TTS] Test render saved: ${json.output_file}`, 'terminal-log-info');
+		pushTerminalLine(`[TTS] Render saved: ${json.output_file}`, 'terminal-log-info');
+		await refreshMediaViewer(true);
 	} catch (err) {
-		pushTerminalLine(`[TTS] ERROR test render failed (${err})`, 'terminal-log-error');
+		pushTerminalLine(`[TTS] ERROR render failed (${err})`, 'terminal-log-error');
 	} finally {
 		btnTestTts.disabled = false;
 	}
@@ -939,18 +949,102 @@ async function testTtiRender() {
 	}
 
 	btnTestTti.disabled = true;
-	pushTerminalLine('[SDXL] Running test generation: "a beautiful sunny city with cars"...', 'terminal-log-info');
+	pushTerminalLine('[SDXL] Running generation: "a beautiful sunny city with cars"...', 'terminal-log-info');
 	try {
 		const res = await fetch('/api/sdxl/test', { method: 'POST' });
 		const json = await res.json();
 		if (!res.ok || !json.ok) {
 			throw new Error(json.error || `request failed (${res.status})`);
 		}
-		pushTerminalLine(`[SDXL] Test render saved: ${json.output_file}`, 'terminal-log-info');
+		pushTerminalLine(`[SDXL] Render saved: ${json.output_file}`, 'terminal-log-info');
+		await refreshMediaViewer(true);
 	} catch (err) {
-		pushTerminalLine(`[SDXL] ERROR test render failed (${err})`, 'terminal-log-error');
+		pushTerminalLine(`[SDXL] ERROR render failed (${err})`, 'terminal-log-error');
 	} finally {
 		btnTestTti.disabled = false;
+	}
+}
+
+async function refreshMediaViewer(silent = false) {
+	if (!mediaImage || !mediaAudio) return;
+
+	if (btnMediaRefresh) {
+		btnMediaRefresh.disabled = true;
+	}
+
+	const stamp = Date.now();
+	const imageUrl = `/api/media/sdxl/latest?t=${stamp}`;
+	const audioUrl = `/api/media/tts/latest?t=${stamp}`;
+	const imagePathLabel = '/output/sdxl_latest.png';
+	const audioPathLabel = '/output/tts_latest.wav';
+	let imageReady = false;
+	let audioReady = false;
+	latestMediaImageUrl = null;
+	latestMediaAudioUrl = null;
+
+	try {
+		const imageRes = await fetch(imageUrl, { cache: 'no-store' });
+		if (imageRes.ok) {
+			mediaImage.src = imageUrl;
+			latestMediaImageUrl = imageUrl;
+			imageReady = true;
+			if (mediaImagePath) {
+				mediaImagePath.textContent = `Path: ${imagePathLabel}`;
+			}
+		} else {
+			mediaImage.removeAttribute('src');
+			if (mediaImagePath) {
+				mediaImagePath.textContent = 'Path: not available';
+			}
+		}
+
+		const audioRes = await fetch(audioUrl, { cache: 'no-store' });
+		if (audioRes.ok) {
+			mediaAudio.src = audioUrl;
+			latestMediaAudioUrl = audioUrl;
+			mediaAudio.load();
+			audioReady = true;
+			if (mediaAudioPath) {
+				mediaAudioPath.textContent = `Path: ${audioPathLabel}`;
+			}
+		} else {
+			mediaAudio.removeAttribute('src');
+			mediaAudio.load();
+			if (mediaAudioPath) {
+				mediaAudioPath.textContent = 'Path: not available';
+			}
+		}
+
+		if (btnMediaOpenImage) {
+			btnMediaOpenImage.disabled = !imageReady;
+		}
+		if (btnMediaOpenAudio) {
+			btnMediaOpenAudio.disabled = !audioReady;
+		}
+
+		if (!silent) {
+			pushTerminalLine('[MEDIA] Viewer refreshed', 'terminal-log-info');
+		}
+	} catch (err) {
+		if (!silent) {
+			pushTerminalLine(`[MEDIA] ERROR refresh failed (${err})`, 'terminal-log-error');
+		}
+		if (mediaImagePath) {
+			mediaImagePath.textContent = 'Path: not available';
+		}
+		if (mediaAudioPath) {
+			mediaAudioPath.textContent = 'Path: not available';
+		}
+		if (btnMediaOpenImage) {
+			btnMediaOpenImage.disabled = true;
+		}
+		if (btnMediaOpenAudio) {
+			btnMediaOpenAudio.disabled = true;
+		}
+	} finally {
+		if (btnMediaRefresh) {
+			btnMediaRefresh.disabled = false;
+		}
 	}
 }
 
@@ -1031,6 +1125,25 @@ if (btnTestTts) {
 if (btnTestTti) {
 	btnTestTti.addEventListener('click', testTtiRender);
 }
+if (btnMediaRefresh) {
+	btnMediaRefresh.addEventListener('click', () => {
+		refreshMediaViewer(false);
+	});
+}
+if (btnMediaOpenImage) {
+	btnMediaOpenImage.disabled = true;
+	btnMediaOpenImage.addEventListener('click', () => {
+		if (!latestMediaImageUrl) return;
+		window.open(latestMediaImageUrl, '_blank', 'noopener,noreferrer');
+	});
+}
+if (btnMediaOpenAudio) {
+	btnMediaOpenAudio.disabled = true;
+	btnMediaOpenAudio.addEventListener('click', () => {
+		if (!latestMediaAudioUrl) return;
+		window.open(latestMediaAudioUrl, '_blank', 'noopener,noreferrer');
+	});
+}
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {
 	btnAgentStateRefresh.addEventListener('click', async () => {
@@ -1054,3 +1167,4 @@ userInputText.addEventListener('keydown', (e) => {
 renderAgentState();
 syncTtsInferenceStatus(true);
 syncSdxlStatus(true);
+refreshMediaViewer(true);

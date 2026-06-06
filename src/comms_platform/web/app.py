@@ -21,7 +21,7 @@ from uuid import uuid4
 import httpx
 import numpy as np
 from fastapi import Body, FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image
@@ -1158,8 +1158,8 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         output_dir = PROJECT_ROOT / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        output_path = output_dir / f"tts_test_{ts}.wav"
-        latest_path = output_dir / "tts_test_latest.wav"
+        output_path = output_dir / f"tts_{ts}.wav"
+        latest_path = output_dir / "tts_latest.wav"
         audio_bytes = result["audio_bytes"]
         output_path.write_bytes(audio_bytes)
         latest_path.write_bytes(audio_bytes)
@@ -1252,6 +1252,20 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             result["prompt"] = _SDXL_TEST_PROMPT
             return result
         return JSONResponse(status_code=503, content=result)
+
+    @app.get("/api/media/sdxl/latest")
+    async def media_sdxl_latest():
+        latest_path = PROJECT_ROOT / "output" / "sdxl_latest.png"
+        if not latest_path.exists():
+            return JSONResponse(status_code=404, content={"ok": False, "error": "sdxl_latest_not_found"})
+        return FileResponse(latest_path, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/media/tts/latest")
+    async def media_tts_latest():
+        latest_path = PROJECT_ROOT / "output" / "tts_latest.wav"
+        if not latest_path.exists():
+            return JSONResponse(status_code=404, content={"ok": False, "error": "tts_latest_not_found"})
+        return FileResponse(latest_path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/touchdesigner/run-example")
     async def run_touchdesigner_example():
