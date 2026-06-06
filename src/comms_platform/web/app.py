@@ -66,6 +66,15 @@ _SDXL_DEFAULT_GUIDANCE = float(os.getenv("SDXL_DEFAULT_GUIDANCE", "7.0"))
 _SDXL_DEFAULT_STEPS = int(os.getenv("SDXL_DEFAULT_STEPS", "20"))
 _TTS_TEST_PROMPT = "hello world"
 _SDXL_TEST_PROMPT = "a beautiful sunny city with cars"
+_UNREAL_AUDIO_INTERVAL_SECONDS = float(os.getenv("UNREAL_AUDIO_INTERVAL_SECONDS", "10"))
+_UNREAL_AUDIO_PROMPT = os.getenv(
+    "UNREAL_AUDIO_PROMPT",
+    "Create a short atmospheric narration for a realtime interactive world.",
+)
+_UNREAL_IMAGE_PROMPT = os.getenv(
+    "UNREAL_IMAGE_PROMPT",
+    "cinematic concept art, dynamic composition, volumetric lighting, ultra detailed",
+)
 
 
 def _post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
@@ -200,6 +209,177 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     _startup_tts_voice = getattr(config, "TTS_DEFAULT_VOICE", None) or _TTS_DEFAULT_VOICE
     _startup_selected_model: str | None = None
     _startup_narration_task: asyncio.Task | None = None
+    _unreal_audio_task: asyncio.Task | None = None
+    _unreal_image_task: asyncio.Task | None = None
+
+    def _normalize_unreal_command(message: str) -> str:
+        return " ".join(str(message or "").strip().lower().split())
+
+    async def _execute_unreal_image_generation(trigger: str) -> dict:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            _generate_sdxl_image,
+            _UNREAL_IMAGE_PROMPT,
+            _SDXL_DEFAULT_GUIDANCE,
+            _SDXL_DEFAULT_STEPS,
+            None,
+        )
+        if result.get("ok"):
+            logger.info(
+                "Unreal image generation completed (trigger=%s): file=%s",
+                trigger,
+                result.get("output_file"),
+            )
+            event_bus.publish(
+                {
+                    "kind": "stream",
+                    "address": "/unreal/start_image",
+                    "params": [result.get("output_file", ""), _UNREAL_IMAGE_PROMPT],
+                    "source": "platform",
+                    "protocol": "internal",
+                    "direction": "outbound",
+                }
+            )
+        else:
+            logger.warning(
+                "Unreal image generation failed (trigger=%s): %s",
+                trigger,
+                result.get("error"),
+            )
+        return result
+
+    async def _run_unreal_audio_loop(trigger: str) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            while True:
+                ollama_result = await loop.run_in_executor(
+                    None,
+                    _generate_ollama_reply,
+                    _ollama_url,
+                    _UNREAL_AUDIO_PROMPT,
+                    _startup_selected_model,
+                )
+                if not ollama_result.get("ok"):
+                    logger.warning(
+                        "Unreal audio loop Ollama step failed (trigger=%s): %s",
+                        trigger,
+                        ollama_result.get("error"),
+                    )
+                    await asyncio.sleep(_UNREAL_AUDIO_INTERVAL_SECONDS)
+                    continue
+
+                reply_text = str(ollama_result.get("reply", "")).strip()
+                if not reply_text:
+                    logger.warning("Unreal audio loop produced empty text (trigger=%s).", trigger)
+                    await asyncio.sleep(_UNREAL_AUDIO_INTERVAL_SECONDS)
+                    continue
+
+                tts_result = await loop.run_in_executor(
+                    None,
+                    _synthesize_tts_audio_bytes,
+                    reply_text,
+                    _startup_tts_lang,
+                    _startup_tts_voice,
+                )
+                if not tts_result.get("ok"):
+                    logger.warning(
+                        "Unreal audio loop TTS step failed (trigger=%s): %s",
+                        trigger,
+                        tts_result.get("error"),
+                    )
+                    await asyncio.sleep(_UNREAL_AUDIO_INTERVAL_SECONDS)
+                    continue
+
+                output_dir = PROJECT_ROOT / "output"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                output_path = output_dir / f"unreal_audio_{ts}.wav"
+                latest_path = output_dir / "unreal_audio_latest.wav"
+                audio_bytes = tts_result["audio_bytes"]
+                output_path.write_bytes(audio_bytes)
+                latest_path.write_bytes(audio_bytes)
+
+                event_bus.publish(
+                    {
+                        "kind": "stream",
+                        "address": "/unreal/start_audio",
+                        "params": [str(output_path), ollama_result.get("model", "")],
+                        "source": "platform",
+                        "protocol": "internal",
+                        "direction": "outbound",
+                    }
+                )
+                logger.info(
+                    "Unreal audio loop generated clip: model=%s file=%s latest=%s",
+                    ollama_result.get("model"),
+                    output_path,
+                    latest_path,
+                )
+                await asyncio.sleep(_UNREAL_AUDIO_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("Unreal audio loop cancelled.")
+            raise
+        except Exception:
+            logger.exception("Unexpected Unreal audio loop failure.")
+
+    def _start_unreal_audio_loop(trigger: str) -> bool:
+        nonlocal _unreal_audio_task
+        if _unreal_audio_task is not None and not _unreal_audio_task.done():
+            return False
+        _unreal_audio_task = asyncio.create_task(_run_unreal_audio_loop(trigger))
+        return True
+
+    async def _stop_unreal_audio_loop() -> bool:
+        nonlocal _unreal_audio_task
+        if _unreal_audio_task is None or _unreal_audio_task.done():
+            _unreal_audio_task = None
+            return False
+        _unreal_audio_task.cancel()
+        try:
+            await _unreal_audio_task
+        except asyncio.CancelledError:
+            pass
+        _unreal_audio_task = None
+        return True
+
+    async def _route_unreal_command(payload: UnrealEventPayload, request_id: str) -> dict:
+        nonlocal _unreal_image_task
+        command = _normalize_unreal_command(payload.message)
+        action = "none"
+        changed = False
+        details: dict = {}
+
+        if command == "start audio":
+            action = "start_audio"
+            changed = _start_unreal_audio_loop(trigger=f"unreal:{request_id}")
+            details["audio_loop_running"] = _unreal_audio_task is not None and not _unreal_audio_task.done()
+        elif command == "stop audio":
+            action = "stop_audio"
+            changed = await _stop_unreal_audio_loop()
+            details["audio_loop_running"] = _unreal_audio_task is not None and not _unreal_audio_task.done()
+        elif command == "start image":
+            action = "start_image"
+            if _unreal_image_task is not None and not _unreal_image_task.done():
+                details["image_task_running"] = True
+            else:
+                _unreal_image_task = asyncio.create_task(
+                    _execute_unreal_image_generation(trigger=f"unreal:{request_id}")
+                )
+                changed = True
+                details["image_task_running"] = True
+        elif command == "agent start":
+            action = "agent_start"
+            changed = master_agent.start()
+        elif command == "agent stop":
+            action = "agent_stop"
+            changed = master_agent.stop()
+
+        return {
+            "action": action,
+            "changed": changed,
+            "details": details,
+        }
 
     async def _run_agent_startup_narration(trigger: str) -> None:
         try:
@@ -295,7 +475,7 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        nonlocal _startup_narration_task
+        nonlocal _startup_narration_task, _unreal_audio_task, _unreal_image_task
         root_logger = logging.getLogger()
         event_log_handler = EventBusLogHandler(event_bus)
         event_log_handler.setLevel(logging.INFO)
@@ -315,6 +495,18 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             _startup_narration_task.cancel()
             try:
                 await _startup_narration_task
+            except asyncio.CancelledError:
+                pass
+        if _unreal_audio_task is not None and not _unreal_audio_task.done():
+            _unreal_audio_task.cancel()
+            try:
+                await _unreal_audio_task
+            except asyncio.CancelledError:
+                pass
+        if _unreal_image_task is not None and not _unreal_image_task.done():
+            _unreal_image_task.cancel()
+            try:
+                await _unreal_image_task
             except asyncio.CancelledError:
                 pass
         if master_agent.is_running:
@@ -355,14 +547,10 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     @app.post("/api/unreal/event")
     async def ingest_unreal_event(payload: UnrealEventPayload):
         request_id = str(uuid4())
+        route_result = await _route_unreal_command(payload, request_id)
 
-        if master_agent.is_running:
-            agent_action = "stop"
-            agent_changed = master_agent.stop()
-        else:
-            agent_action = "start"
-            agent_changed = master_agent.start()
-
+        agent_action = route_result["action"] if route_result["action"].startswith("agent_") else "none"
+        agent_changed = route_result["changed"] if agent_action != "none" else False
         agent_running = master_agent.is_running
 
         logger.info(
@@ -373,10 +561,10 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             payload.session_id or "none",
         )
         logger.info(
-            "Agent toggled by Unreal event [%s]: action=%s changed=%s running=%s",
+            "Unreal event routed [%s]: action=%s changed=%s running=%s",
             request_id,
-            agent_action,
-            agent_changed,
+            route_result["action"],
+            route_result["changed"],
             agent_running,
         )
 
@@ -408,6 +596,9 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             "agent_action": agent_action,
             "agent_changed": agent_changed,
             "agent_running": agent_running,
+            "routed_action": route_result["action"],
+            "route_changed": route_result["changed"],
+            "route_details": route_result["details"],
         }
 
     @app.post("/api/platform/send-to-unreal")
