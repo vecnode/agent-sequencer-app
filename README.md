@@ -143,6 +143,29 @@ Current API endpoints and capabilities:
 - `GET /api/touchdesigner/processes` — lists running TouchDesigner processes on this machine
 
 
+## Tests
+
+Run tests with `uv` from the project root:
+
+```sh
+# New Unreal trigger HTTP tests (without external Unreal/TD software)
+uv run pytest -q tests/test_api_unreal_start_audio.py
+uv run pytest -q tests/test_api_unreal_start_image.py
+
+# Live HTTP tests (send real POST requests to running API, watch backend console logs)
+# Terminal 1: start platform
+.\run_platform.bat
+
+# Terminal 2: send live trigger requests via pytest
+uv run pytest -q -s tests/test_http_unreal_live.py
+
+# Optional: use a non-default API host/port
+LIVE_API_BASE_URL=http://127.0.0.1:8000 uv run pytest -q -s tests/test_http_unreal_live.py
+
+# Optional: run all API tests
+uv run pytest -q tests/test_api_*.py
+```
+
 
 
 
