@@ -66,21 +66,31 @@ uv pip install -r requirements.txt
 </details>
 
 <details>
-<summary>Block 05 - Empty</summary>
+<summary>Block 05 - Media Viewer</summary>
 
-- Empty
+- Shows latest generated media artifacts.
+- Left card: SDXL thumbnail preview, image path, and Open Image action.
+- Right card: TTS audio player, audio path, and Open Audio action.
+- Includes Refresh to reload latest media from backend endpoints.
 </details>
 
 <details>
 <summary>Block 06 - Inference</summary>
 
-- Hosts two inference modules in a single control surface.
+- Hosts inference engine controls in a compact control surface.
 - SuperTonic 3: load/unload TTS engine and monitor engine status.
-- SDXL Base 1: load/unload image pipeline, submit prompts, and preview generated images. Uses xFormers attention when available for faster generation.
+- SDXL Base 1: load/unload image pipeline and run quick generation checks. Uses xFormers attention when available for faster generation.
 </details>
 
 <details>
-<summary>Block 07 - User Input</summary>
+<summary>Block 07 - Reserved</summary>
+
+- Reserved panel on the right side of Block 06.
+- Matches Block 06 height for dashboard layout balance.
+</details>
+
+<details>
+<summary>Block 08 - User Input</summary>
 
 - Sends text payloads to the backend agent.
 - Creates the main human-to-agent message path.
@@ -105,6 +115,9 @@ Current API endpoints and capabilities:
 - `POST /api/agent/stop` — stops agent coordinator
 - `POST /api/agent/message` — sends human text to the agent, appends to history, and returns the current reply plus routing/LLM metadata
 
+- `POST /api/unreal/event` — ingests Unreal events and toggles agent start/stop based on current state
+- `POST /api/platform/send-to-unreal` — sends a message to Unreal `/notify`
+
 - `GET /api/ollama/status` — checks Ollama availability and lists models
 - `POST /api/ollama/open` — starts Ollama when installed locally
 
@@ -112,11 +125,16 @@ Current API endpoints and capabilities:
 - `POST /api/tts/engine/on` — loads SuperTonic 3 into memory for fast inference
 - `POST /api/tts/engine/off` — unloads SuperTonic 3 from memory
 - `POST /api/tts/synthesize` — synthesizes TTS audio using SuperTonic 3 and returns WAV audio
+- `POST /api/tts/test` — runs a quick TTS render and stores latest audio artifact
 
 - `GET /api/sdxl/status` — reports whether SDXL Base 1 is loaded
 - `POST /api/sdxl/engine/on` — loads SDXL Base 1 pipeline into memory
 - `POST /api/sdxl/engine/off` — unloads SDXL Base 1 pipeline from memory
 - `POST /api/sdxl/generate` — generates an image from prompt and returns preview payload + output file metadata
+- `POST /api/sdxl/test` — runs a quick SDXL render and stores latest image artifact
+
+- `GET /api/media/sdxl/latest` — serves `output/sdxl_latest.png` for UI/media viewer
+- `GET /api/media/tts/latest` — serves `output/tts_latest.wav` for UI/media viewer
 
 
 
