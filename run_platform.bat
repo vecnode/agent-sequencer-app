@@ -14,10 +14,31 @@ set "browser_host=%web_host%"
 if /i "%browser_host%"=="0.0.0.0" set "browser_host=127.0.0.1"
 set "platform_url=http://%browser_host%:%web_port%"
 
+echo [setup] Trying CUDA-enabled PyTorch install (cu124)...
+uv pip install --index-url https://download.pytorch.org/whl/cu124 --upgrade --force-reinstall torch torchvision torchaudio >nul 2>&1
+if errorlevel 1 (
+	echo [setup] CUDA wheel install failed, falling back to default PyTorch install.
+	uv pip install torch torchvision torchaudio
+	if errorlevel 1 (
+		popd
+		exit /b %errorlevel%
+	)
+) else (
+	echo [setup] CUDA-enabled PyTorch installed.
+)
+
 uv pip install -e .
 if errorlevel 1 (
 	popd
 	exit /b %errorlevel%
+)
+
+echo [setup] Re-applying CUDA-enabled PyTorch wheel after editable install...
+uv pip install --index-url https://download.pytorch.org/whl/cu124 --upgrade --force-reinstall torch torchvision torchaudio >nul 2>&1
+if errorlevel 1 (
+	echo [setup] CUDA torch reinstall failed; keeping the currently installed torch build.
+) else (
+	echo [setup] CUDA torch wheel is active.
 )
 
 set "chrome_exe="

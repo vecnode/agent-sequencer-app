@@ -22,6 +22,8 @@ const btnInferenceToggle = document.getElementById('btn-inference-toggle');
 const inferenceDot = document.getElementById('inference-dot');
 const inferenceStatus = document.getElementById('inference-status');
 const btnSdxlToggle = document.getElementById('btn-sdxl-toggle');
+const btnTestTts = document.getElementById('btn-test-tts');
+const btnTestTti = document.getElementById('btn-test-tti');
 const sdxlDot = document.getElementById('sdxl-dot');
 const sdxlStatus = document.getElementById('sdxl-status');
 const userInputText = document.getElementById('user-input-text');
@@ -906,6 +908,52 @@ async function toggleSdxlEngine() {
 	}
 }
 
+async function testTtsRender() {
+	if (!btnTestTts) return;
+	if (!agentState.inference.tts.loaded) {
+		pushTerminalLine('[TTS] Engine is OFF. Turn SuperTonic 3 ON first.', 'terminal-log-warning');
+		return;
+	}
+
+	btnTestTts.disabled = true;
+	pushTerminalLine('[TTS] Running test synthesis: "hello world"...', 'terminal-log-info');
+	try {
+		const res = await fetch('/api/tts/test', { method: 'POST' });
+		const json = await res.json();
+		if (!res.ok || !json.ok) {
+			throw new Error(json.error || `request failed (${res.status})`);
+		}
+		pushTerminalLine(`[TTS] Test render saved: ${json.output_file}`, 'terminal-log-info');
+	} catch (err) {
+		pushTerminalLine(`[TTS] ERROR test render failed (${err})`, 'terminal-log-error');
+	} finally {
+		btnTestTts.disabled = false;
+	}
+}
+
+async function testTtiRender() {
+	if (!btnTestTti) return;
+	if (!agentState.inference.sdxl.loaded) {
+		pushTerminalLine('[SDXL] Engine is OFF. Turn SDXL Base 1 ON first.', 'terminal-log-warning');
+		return;
+	}
+
+	btnTestTti.disabled = true;
+	pushTerminalLine('[SDXL] Running test generation: "a beautiful sunny city with cars"...', 'terminal-log-info');
+	try {
+		const res = await fetch('/api/sdxl/test', { method: 'POST' });
+		const json = await res.json();
+		if (!res.ok || !json.ok) {
+			throw new Error(json.error || `request failed (${res.status})`);
+		}
+		pushTerminalLine(`[SDXL] Test render saved: ${json.output_file}`, 'terminal-log-info');
+	} catch (err) {
+		pushTerminalLine(`[SDXL] ERROR test render failed (${err})`, 'terminal-log-error');
+	} finally {
+		btnTestTti.disabled = false;
+	}
+}
+
 // --- User Input / Agent Messaging -----------------------------------------
 
 // Sends user message to the backend agent and appends replies to terminal panel.
@@ -976,6 +1024,12 @@ if (btnInferenceToggle) {
 }
 if (btnSdxlToggle) {
 	btnSdxlToggle.addEventListener('click', toggleSdxlEngine);
+}
+if (btnTestTts) {
+	btnTestTts.addEventListener('click', testTtsRender);
+}
+if (btnTestTti) {
+	btnTestTti.addEventListener('click', testTtiRender);
 }
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {

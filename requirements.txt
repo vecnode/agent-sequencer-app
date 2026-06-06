@@ -1,5 +1,7 @@
-torch>=2.2.0
-transformers>=4.40.0
+torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl ; platform_system == "Windows" and python_version == "3.12"
+torchvision @ https://download.pytorch.org/whl/cu124/torchvision-0.21.0%2Bcu124-cp312-cp312-win_amd64.whl ; platform_system == "Windows" and python_version == "3.12"
+torchaudio @ https://download.pytorch.org/whl/cu124/torchaudio-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl ; platform_system == "Windows" and python_version == "3.12"
+transformers>=4.40.0,<5
 diffusers>=0.30.0
 accelerate>=0.33.0
 safetensors>=0.4.5

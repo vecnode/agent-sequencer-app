@@ -1,43 +1,28 @@
-# agent-sequencer-app
+# ai-comms-platform
 
 Under active development. 
 
-This repository contains a professional agent-based multimodal communications platform. The system coordinates a master agent with realtime monitoring and browser UI. For LLMs, relies on Ollama, for TTS on Supertonic 3.
+This repository contains a communications platform of TTS and TTI with a master agent. Interop with TouchDesigner, Unreal Engine, Ollama, TTS model Supertonic 3, TTI model SDXL-Base-1.
 
 Development Guidelines:
 
-- Coordination is mandatory for critical environments.
-- Traceable platform execution with accurate timings.
 - A master agent controls and is accessed by the platform.
+- Coordination is mandatory for critical environments.
+- Expose API and execution timings.
 
-## Reproduce (Host)
+
+## Reproduce Windows
+
+Requires Python 3.12 on Windows for the CUDA PyTorch wheel set used by SDXL.
 
 ```sh
-# Windows
-.\run_platform.bat
-
-# 1. Manually
+# First time
 uv venv
 uv pip install -r requirements.txt
 
-# 2. Install this repo in editable mode
-uv pip install -e .
-
-# 3. Run the platform
-uv run python -m comms_platform.main
+.\run_platform.bat
 ```
 
-## Testing
-
-Run API tests with uv:
-
-```sh
-# Run all tests
-uv run pytest -q -s
-
-# Run only API tests
-uv run pytest -q -s tests/test_api.py
-```
 
 ## Blocks
 

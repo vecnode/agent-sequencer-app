@@ -40,7 +40,9 @@ _TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "F1")
 _TTS_PREWARM_ON_STARTUP = os.getenv("TTS_PREWARM_ON_STARTUP", "true").lower() == "true"
 _SDXL_MODEL_ID = os.getenv("SDXL_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
 _SDXL_DEFAULT_GUIDANCE = float(os.getenv("SDXL_DEFAULT_GUIDANCE", "7.0"))
-_SDXL_DEFAULT_STEPS = int(os.getenv("SDXL_DEFAULT_STEPS", "30"))
+_SDXL_DEFAULT_STEPS = int(os.getenv("SDXL_DEFAULT_STEPS", "20"))
+_TTS_TEST_PROMPT = "hello world"
+_SDXL_TEST_PROMPT = "a beautiful sunny city with cars"
 
 _tts_engine: Any | None = None
 _tts_engine_lock = threading.Lock()
@@ -482,12 +484,21 @@ def _check_tts_engine_status(voice_name: str) -> dict:
         }
 
 
-def _get_sdxl_runtime() -> tuple[Any, str, Any]:
+def _get_sdxl_runtime() -> tuple[Any, str, Any, str | None]:
     import torch
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    return torch, device, dtype
+    # Prefer CUDA first for SDXL, but gracefully fall back to CPU if unavailable.
+    fallback_reason: str | None = None
+    if torch.cuda.is_available():
+        try:
+            _ = torch.empty(1, device="cuda")
+            return torch, "cuda", torch.float16, None
+        except Exception as exc:
+            fallback_reason = f"cuda_probe_failed: {exc}"
+    else:
+        fallback_reason = "torch.cuda.is_available() is false"
+
+    return torch, "cpu", torch.float32, fallback_reason
 
 
 def _release_cuda_cache() -> None:
@@ -513,10 +524,31 @@ def _get_sdxl_pipeline() -> Any:
         if _sdxl_pipeline is None:
             from diffusers import DiffusionPipeline
 
-            _, device, dtype = _get_sdxl_runtime()
+            torch, device, dtype, fallback_reason = _get_sdxl_runtime()
+            logger.info(
+                "SDXL runtime probe: torch=%s torch_cuda=%s torch_version_cuda=%s",
+                getattr(torch, "__version__", "unknown"),
+                torch.cuda.is_available(),
+                getattr(getattr(torch, "version", None), "cuda", None),
+            )
             logger.info("Initializing SDXL Base 1 pipeline on %s (first load may take several minutes).", device)
+            if device == "cpu" and fallback_reason:
+                logger.warning("SDXL CUDA not active, using CPU (%s)", fallback_reason)
             _sdxl_pipeline = DiffusionPipeline.from_pretrained(_SDXL_MODEL_ID, torch_dtype=dtype)
             _sdxl_pipeline = _sdxl_pipeline.to(device)
+            _sdxl_pipeline.set_progress_bar_config(disable=True)
+            if device == "cuda":
+                try:
+                    _sdxl_pipeline.enable_xformers_memory_efficient_attention()
+                    logger.info("SDXL xFormers attention enabled.")
+                except Exception:
+                    logger.info("SDXL xFormers attention unavailable; using default attention.")
+                try:
+                    import torch
+
+                    _sdxl_pipeline.unet.to(memory_format=torch.channels_last)
+                except Exception:
+                    pass
             logger.info("SDXL Base 1 pipeline initialized on %s.", device)
         return _sdxl_pipeline
 
@@ -527,7 +559,7 @@ def _set_sdxl_engine_loaded(loaded: bool) -> dict:
         if loaded:
             try:
                 _get_sdxl_pipeline()
-                _, device, _ = _get_sdxl_runtime()
+                _, device, _, _ = _get_sdxl_runtime()
                 return {
                     "ok": True,
                     "engine": "SDXL Base 1",
@@ -546,7 +578,7 @@ def _set_sdxl_engine_loaded(loaded: bool) -> dict:
 
         _sdxl_pipeline = None
         _release_cuda_cache()
-        _, device, _ = _get_sdxl_runtime()
+        _, device, _, _ = _get_sdxl_runtime()
         return {
             "ok": True,
             "engine": "SDXL Base 1",
@@ -558,7 +590,7 @@ def _set_sdxl_engine_loaded(loaded: bool) -> dict:
 
 def _get_sdxl_engine_loaded_state() -> dict:
     with _sdxl_engine_lock:
-        _, device, _ = _get_sdxl_runtime()
+        _, device, _, _ = _get_sdxl_runtime()
         return {
             "ok": True,
             "engine": "SDXL Base 1",
@@ -578,19 +610,29 @@ def _generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps
                 "engine": "SDXL Base 1",
             }
 
-        torch, device, _ = _get_sdxl_runtime()
+        torch, device, _, _ = _get_sdxl_runtime()
         generator = None
         if seed is not None:
             generator = torch.Generator(device=device).manual_seed(int(seed))
 
         started_at = datetime.now(timezone.utc)
         pipeline = _get_sdxl_pipeline()
-        image = pipeline(
-            prompt=prompt,
-            guidance_scale=float(guidance_scale),
-            num_inference_steps=int(num_inference_steps),
-            generator=generator,
-        ).images[0]
+        with torch.inference_mode():
+            if device == "cuda":
+                with torch.autocast("cuda", dtype=torch.float16):
+                    image = pipeline(
+                        prompt=prompt,
+                        guidance_scale=float(guidance_scale),
+                        num_inference_steps=int(num_inference_steps),
+                        generator=generator,
+                    ).images[0]
+            else:
+                image = pipeline(
+                    prompt=prompt,
+                    guidance_scale=float(guidance_scale),
+                    num_inference_steps=int(num_inference_steps),
+                    generator=generator,
+                ).images[0]
         elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
 
         output_dir = PROJECT_ROOT / "output"
@@ -1061,6 +1103,55 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             },
         )
 
+    @app.post("/api/tts/test")
+    async def tts_test_render():
+        state = _get_tts_engine_loaded_state()
+        if not state.get("loaded"):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "ok": False,
+                    "error": "tts_engine_not_loaded",
+                    "engine": "SuperTonic 3",
+                },
+            )
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            _synthesize_tts_audio_bytes,
+            _TTS_TEST_PROMPT,
+            _TTS_DEFAULT_LANG,
+            _TTS_DEFAULT_VOICE,
+        )
+        if not result.get("ok"):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "ok": False,
+                    "error": result.get("error", "tts_test_failed"),
+                    "engine": "SuperTonic 3",
+                },
+            )
+
+        output_dir = PROJECT_ROOT / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_path = output_dir / f"tts_test_{ts}.wav"
+        latest_path = output_dir / "tts_test_latest.wav"
+        audio_bytes = result["audio_bytes"]
+        output_path.write_bytes(audio_bytes)
+        latest_path.write_bytes(audio_bytes)
+
+        return {
+            "ok": True,
+            "engine": "SuperTonic 3",
+            "prompt": _TTS_TEST_PROMPT,
+            "duration_seconds": float(result.get("duration", 0.0)),
+            "output_file": str(output_path),
+            "latest_file": str(latest_path),
+        }
+
     @app.get("/api/tts/status")
     async def tts_status(voice_name: str = _TTS_DEFAULT_VOICE):
         loop = asyncio.get_running_loop()
@@ -1111,6 +1202,33 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             payload.seed,
         )
         if result.get("ok"):
+            return result
+        return JSONResponse(status_code=503, content=result)
+
+    @app.post("/api/sdxl/test")
+    async def sdxl_test_render():
+        state = _get_sdxl_engine_loaded_state()
+        if not state.get("loaded"):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "ok": False,
+                    "error": "sdxl_engine_not_loaded",
+                    "engine": "SDXL Base 1",
+                },
+            )
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            _generate_sdxl_image,
+            _SDXL_TEST_PROMPT,
+            _SDXL_DEFAULT_GUIDANCE,
+            _SDXL_DEFAULT_STEPS,
+            None,
+        )
+        if result.get("ok"):
+            result["prompt"] = _SDXL_TEST_PROMPT
             return result
         return JSONResponse(status_code=503, content=result)
 
