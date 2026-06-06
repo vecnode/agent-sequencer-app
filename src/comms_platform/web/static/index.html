@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Comms Platform</title>
+  <title>AI Comms Platform</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body data-theme="light">
 <div class="layout">
 
+  <!-- Top status bar: app title, connection indicator, and theme selector. -->
   <header>
-    <h1>Comms Platform</h1>
+    <h1>AI Comms Platform</h1>
     <span class="sep">|</span>
     <span class="badge">
       <span class="dot" id="dot"></span>
@@ -28,81 +29,111 @@
     </div>
   </header>
 
+  <!-- Primary navigation between dashboard and stream-monitor views. -->
   <nav class="tabs" aria-label="Main sections">
     <button class="tab active" data-tab="dashboard" id="tab-dashboard" type="button">Dashboard</button>
     <button class="tab" data-tab="incoming" id="tab-incoming" type="button">Incoming Signals</button>
   </nav>
 
   <main>
+    <!-- Dashboard workspace with fixed-position operational widgets. -->
     <section class="tab-panel active" id="panel-dashboard" role="region" aria-labelledby="tab-dashboard">
       <section class="panel dashboard-panel">
 
         <div class="panel-body dashboard-grid">
+          <!-- Block 01: agent lifecycle controls. -->
           <div class="dashboard-block widget-panel widget-agent">
-            <div class="widget-title">Widget 01 · Agent</div>
+            <div class="widget-title">Block 01 Agent</div>
             <div class="widget-agent-controls">
               <button id="btn-agent-toggle" class="agent-btn agent-btn-off" type="button" aria-pressed="false">Agent OFF</button>
             </div>
-            <div class="widget-agent-controls widget-agent-controls-secondary">
-              <button id="btn-broadcast-toggle" class="agent-btn agent-btn-off" type="button" aria-pressed="false">Broadcast OFF</button>
-            </div>
             <div class="widget-agent-status">
               Status: <span id="agent-status" class="agent-status-off">OFF</span>
-              <span class="sep">|</span>
-              Broadcast: <span id="agent-broadcast" class="agent-status-off">OFF</span>
             </div>
           </div>
+          <!-- Block 02: terminal output for logs, stream events, and agent replies. -->
           <div class="dashboard-block widget-panel widget-terminal" aria-label="Widget terminal">
-            <div class="widget-title">Widget 02 · Terminal Output</div>
+            <div class="widget-title">Block 02 Terminal</div>
             <div id="terminal-feed" class="widget-terminal-body">
               <div class="terminal-line terminal-log-system">&gt; Waiting for backend logs and stream messages...</div>
             </div>
           </div>
+          <!-- Block 04: TouchDesigner and Unreal bridge actions. -->
           <div class="dashboard-block widget-panel widget-settings" aria-label="Widget settings">
-            <div class="widget-title">Widget 03 · Settings</div>
+            <div class="widget-title">Block 04 Engines</div>
             <div class="widget-settings-body">
-              <div class="td-actions">
-                <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Open TD</button>
-                <button id="btn-check-td" class="agent-btn settings-btn" type="button">Check TD</button>
+              <div class="engine-tabs" role="tablist" aria-label="Engine tabs">
+                <button class="engine-tab active" data-engine-tab="touchdesigner" type="button" role="tab" aria-selected="true">TouchDesigner</button>
+                <button class="engine-tab" data-engine-tab="unreal" type="button" role="tab" aria-selected="false">Unreal Engine</button>
+                <button class="engine-tab" data-engine-tab="ollama" type="button" role="tab" aria-selected="false">Ollama</button>
               </div>
-              <div class="widget-settings-status">
-                TouchDesigner: <span id="td-launch-status" class="agent-status-off">IDLE</span>
+
+              <div class="engine-tab-panel active" data-engine-panel="touchdesigner" role="tabpanel">
+                <div class="td-actions">
+                  <button id="btn-run-example-toe" class="agent-btn settings-btn" type="button">Open TD</button>
+                  <button id="btn-check-td" class="agent-btn settings-btn" type="button">Check TD</button>
+                </div>
+                <div class="widget-settings-status">
+                  TouchDesigner: <span id="td-launch-status" class="agent-status-off">IDLE</span>
+                </div>
+                <button id="btn-send-td-test-data" class="agent-btn settings-btn" type="button">Send test data</button>
+                <div class="widget-settings-status">
+                  TD Webserver: <span id="td-send-status" class="agent-status-off">IDLE</span>
+                </div>
               </div>
-              <button id="btn-send-td-test-data" class="agent-btn settings-btn" type="button">Send test data</button>
-              <div class="widget-settings-status">
-                TD Webserver: <span id="td-send-status" class="agent-status-off">IDLE</span>
+
+              <div class="engine-tab-panel" data-engine-panel="unreal" role="tabpanel" hidden>
+                <button id="btn-send-ue5" class="agent-btn settings-btn" type="button">Send UE5</button>
+                <div class="widget-settings-status">
+                  UE5: <span id="ue5-send-status" class="agent-status-off">IDLE</span>
+                </div>
               </div>
-              <button id="btn-send-ue5" class="agent-btn settings-btn" type="button">Send UE5</button>
-              <div class="widget-settings-status">
-                UE5: <span id="ue5-send-status" class="agent-status-off">IDLE</span>
+
+              <div class="engine-tab-panel" data-engine-panel="ollama" role="tabpanel" hidden>
+                <div class="td-actions">
+                  <button id="btn-check-ollama" class="agent-btn settings-btn" type="button">Check Ollama</button>
+                  <button id="btn-open-ollama" class="agent-btn settings-btn" type="button">Open Ollama</button>
+                </div>
+                <select id="ollama-model-select" class="widget-select" disabled>
+                  <option value="">No models loaded</option>
+                </select>
+                <div class="widget-settings-status">
+                  Ollama: <span id="ollama-status" class="agent-status-off">UNKNOWN</span>
+                </div>
               </div>
             </div>
           </div>
+          <!-- Block 05: Ollama service health and model selection. -->
           <div class="dashboard-block widget-panel widget-ollama" aria-label="Widget ollama">
-            <div class="widget-title">Widget 05 · Ollama</div>
+            <div class="widget-title">Block 05 Ollama</div>
             <div class="widget-ollama-body">
-              <button id="btn-check-ollama" class="agent-btn settings-btn" type="button">Check Ollama</button>
-              <label class="widget-settings-status" for="ollama-model-select">Model</label>
-              <select id="ollama-model-select" class="widget-select" disabled>
-                <option value="">No models loaded</option>
-              </select>
-              <div class="widget-settings-status">
-                Ollama: <span id="ollama-status" class="agent-status-off">UNKNOWN</span>
+              <div class="widget-settings-status">Empty</div>
+            </div>
+          </div>
+          <!-- Block 06: reserved inference surface for future controls. -->
+          <div class="dashboard-block widget-panel widget-ops" aria-label="Widget operations">
+            <div class="widget-title">Block 06 Inference</div>
+            <div class="widget-inference-body">
+              <div class="widget-settings-status widget-inference-status">
+                <span id="inference-dot" class="dot disconnected"></span>
+                SuperTonic 3: <span id="inference-status" class="agent-status-off">OFFLINE</span>
               </div>
-              <div class="widget-settings-status">
-                Models: <span id="ollama-model-count">0</span>
+              <div class="td-actions">
+                <button id="btn-inference-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTS OFF</button>
               </div>
             </div>
           </div>
+          <!-- Block 07: full-width operator input area for sending messages to the agent. -->
           <div class="dashboard-block widget-panel widget-user-input" aria-label="Widget user input">
-            <div class="widget-title">User Input</div>
+            <div class="widget-title">Block 07 User Input</div>
             <div class="widget-user-input-body">
               <textarea id="user-input-text" class="widget-input" placeholder="Type your instruction or payload here..."></textarea>
               <button id="btn-user-input-send" class="agent-btn settings-btn" type="button">Send</button>
             </div>
           </div>
+          <!-- Block 03: agent state inspector with scoped JSON view and utility actions. -->
           <div class="dashboard-block widget-panel widget-agent-state" aria-label="Agent state inspector">
-            <div class="widget-title">Agent State</div>
+            <div class="widget-title">Block 03 Agent State</div>
             <div class="widget-agent-state-toolbar">
               <button id="btn-agent-state-refresh" class="agent-btn settings-btn agent-state-toolbar-btn" type="button">Refresh</button>
               <button id="btn-agent-state-copy" class="agent-btn settings-btn agent-state-toolbar-btn" type="button">Copy</button>
@@ -123,6 +154,7 @@
       </section>
     </section>
 
+  <!-- Incoming signals tab: raw stream monitor and reserved secondary panels. -->
     <section class="tab-panel" id="panel-incoming" role="region" aria-labelledby="tab-incoming">
       <section class="panel panel-stream">
         <div class="toolbar panel-header">

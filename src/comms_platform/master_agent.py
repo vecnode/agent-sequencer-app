@@ -18,7 +18,6 @@ class MasterAgent:
         self._stop_event: threading.Event | None = None
         self._lock = threading.Lock()
         self._heartbeat_count = 0
-        self._broadcast_enabled = False
         self._history_text_read: list[str] = []
         self._last_intent_decision: PerceptionDecision | None = None
         self._intent_engine = PerceptionEngine(
@@ -84,16 +83,6 @@ class MasterAgent:
             return self._heartbeat_count
 
     @property
-    def broadcast_enabled(self) -> bool:
-        with self._lock:
-            return self._broadcast_enabled
-
-    def set_broadcast(self, enabled: bool) -> bool:
-        with self._lock:
-            self._broadcast_enabled = enabled
-            return self._broadcast_enabled
-
-    @property
     def history_text_read(self) -> list[str]:
         with self._lock:
             return list(self._history_text_read)
@@ -137,21 +126,12 @@ class MasterAgent:
         if tool_name == "agent_stop":
             self.stop()
             return
-        if tool_name == "broadcast_on":
-            self.set_broadcast(True)
-            return
-        if tool_name == "broadcast_off":
-            self.set_broadcast(False)
-            return
         logger.info("Tool routing skipped unknown tool: %s", tool_name)
 
     def _run(self, stop_event: threading.Event) -> None:
         while not stop_event.wait(1.0):
-            # Placeholder processing loop; real receive/process work can be plugged in here.
-            with self._lock:
-                self._heartbeat_count += 1
-                beat = self._heartbeat_count
-            logger.info("Master agent heartbeat %s", beat)
+            # Idle loop intentionally quiet; work is event-driven via incoming instructions.
+            continue
 
 
 # Backward-compatible alias while references are being migrated.

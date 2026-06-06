@@ -19,7 +19,6 @@ class StubAgentCoordinator:
     def __init__(self):
         self._running = False
         self.heartbeat_count = 0
-        self.broadcast_enabled = False
         self._history_text_read: list[str] = []
 
     @property
@@ -38,15 +37,11 @@ class StubAgentCoordinator:
         self._running = False
         return True
 
-    def set_broadcast(self, enabled: bool):
-        self.broadcast_enabled = enabled
-        return self.broadcast_enabled
-
     @property
     def history_text_read(self):
         return list(self._history_text_read)
 
-    def handle_human_message(self, text: str):
+    def handle_human_message(self, text: str, selected_model: str | None = None):
         self._history_text_read.append(text.strip())
         return "ok."
 
@@ -105,7 +100,6 @@ def test_status_endpoint_reports_server_active():
     assert "sse_clients" in body
     assert "osc_input" in body
     assert "osc_output" in body
-    assert "agent_broadcast" in body
     _log_test(
         "GET /api/status",
         "status_code="
@@ -247,26 +241,6 @@ def test_agent_start_and_stop_endpoints():
         _log_test(
             "POST /api/agent/start + /api/agent/stop",
             f"start_running={start_body['running']}, stop_running={stop_body['running']}",
-        )
-
-
-def test_agent_broadcast_on_and_off_endpoints():
-    with _build_client() as client:
-        on_response = client.post("/api/agent/broadcast/on")
-        assert on_response.status_code == 200
-        on_body = on_response.json()
-        assert on_body["ok"] is True
-        assert on_body["broadcast"] is True
-
-        off_response = client.post("/api/agent/broadcast/off")
-        assert off_response.status_code == 200
-        off_body = off_response.json()
-        assert off_body["ok"] is True
-        assert off_body["broadcast"] is False
-
-        _log_test(
-            "POST /api/agent/broadcast/on + /api/agent/broadcast/off",
-            f"broadcast_on={on_body['broadcast']}, broadcast_off={off_body['broadcast']}",
         )
 
 

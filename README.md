@@ -39,83 +39,101 @@ uv run pytest -q -s
 uv run pytest -q -s tests/test_api.py
 ```
 
-## Audio
+## Blocks
 
-Supertonic 3 for real-time TTS on CPU.  
-On first time use will download when clicking "Listen".
+<details>
+<summary>Block 01 - Agent</summary>
 
-## Docker (build)
+- Starts and stops the master agent.
+- Shows current agent state.
+- Uses the top-left control block for core runtime control.
+</details>
 
-```sh
-future
-```
+<details>
+<summary>Block 02 - Terminal</summary>
+
+- Shows backend logs, stream events, and agent replies.
+- Acts as the main realtime output surface.
+- Useful for tracing platform activity and request flow.
+</details>
+
+<details>
+<summary>Block 03 - Agent State</summary>
+
+- Displays a JSON snapshot of the current runtime state.
+- Can be scoped to agent, stream, connections, TouchDesigner, Ollama, or UI.
+- Includes refresh and copy controls for debugging.
+</details>
+
+<details>
+<summary>Block 04 - Engines</summary>
+
+- Launches TouchDesigner example workflows.
+- Checks TouchDesigner process state.
+- Sends test data and UE5 bridge messages.
+</details>
+
+<details>
+<summary>Block 05 - Ollama</summary>
+
+- Checks whether Ollama is reachable on the host.
+- Opens Ollama from the installed Windows executable when available.
+- Lets you pick an available Ollama model for agent chat.
+</details>
+
+<details>
+<summary>Block 06 - Inference</summary>
+
+- Loads or unloads the SuperTonic 3 TTS engine.
+- Shows a quick status indicator for loaded/not loaded.
+- Keeps the engine ready for fast inference when turned on.
+</details>
+
+<details>
+<summary>Block 07 - User Input</summary>
+
+- Sends text payloads to the backend agent.
+- Creates the main human-to-agent message path.
+- Appends the user message and agent reply into the terminal view.
+</details>
 
 
 ## API
 
-Current API endpoints:
+Current API endpoints and capabilities:
 
 - `GET /` — serves the web UI
 - `GET /health` — liveness endpoint
-- `GET /api/status` — runtime status (SSE clients, OSC in/out, agent state)
-- `GET /api/ollama/status` — checks Ollama availability and lists models
 - `GET /events` — SSE stream for frontend realtime events/logs
-
-- `POST /api/agent/start` — starts agent coordinator
-- `POST /api/agent/stop` — stops agent coordinator
-- `POST /api/agent/broadcast/on` — enables agent broadcast
-- `POST /api/agent/broadcast/off` — disables agent broadcast
-- `POST /api/agent/message` — sends human text to the agent, appends to history, and returns current reply
+- `GET /api/status` — runtime status (SSE clients, OSC in/out, agent state)
 
 - `POST /api/signals/publish` — publishes a stream signal to frontend/event bus
 - `POST /api/signals/send` — sends signal (OSC when `protocol=osc`, otherwise stream)
+
+
+- `POST /api/agent/start` — starts agent coordinator
+- `POST /api/agent/stop` — stops agent coordinator
+- `POST /api/agent/message` — sends human text to the agent, appends to history, and returns the current reply plus routing/LLM metadata
+
+- `GET /api/ollama/status` — checks Ollama availability and lists models
+- `POST /api/ollama/open` — starts Ollama when installed locally
+
+- `GET /api/tts/status` — reports whether SuperTonic 3 is loaded
+- `POST /api/tts/engine/on` — loads SuperTonic 3 into memory for fast inference
+- `POST /api/tts/engine/off` — unloads SuperTonic 3 from memory
+- `POST /api/tts/synthesize` — synthesizes TTS audio using SuperTonic 3 and returns WAV audio
+
+
 
 - `POST /api/touchdesigner/run-example` — launches `touchdesigner/example1.toe`
 - `POST /api/touchdesigner/send-test-data` — sends JSON payload to TouchDesigner web server (`TD_WEB_HOST:TD_WEB_PORT`)
 - `GET /api/touchdesigner/processes` — lists running TouchDesigner processes on this machine
 
 
-API tests currently cover core and integration-safe routes (health/status, signals, agent controls, TouchDesigner/Ollama status/open).
 
-## Repository Structure
 
-```text
-.
-|-- LICENSE
-|-- README.md
-|-- pyproject.toml
-|-- requirements.txt
-|-- run_platform.bat
-|-- docker/ (containerization resources)
-|   `-- README.md
-|-- docs/ (project documentation)
-|   `-- README.md
-|-- src/ (application source code)
-|   |-- comms_platform/ (core platform package)
-|   |   |-- __init__.py
-|   |   |-- master_agent.py
-|   |   |-- config.py
-|   |   |-- perception_engine.py
-|   |   |-- inference_worker.py
-|   |   |-- main.py
-|   |   |-- td_sender.py
-|   |   |-- thread_manager.py
-|   |   |-- utils/ (shared utilities)
-|   |   |   |-- __init__.py
-|   |   |   `-- logger.py
-|   |   `-- web/ (FastAPI web server and UI)
-|   |       |-- __init__.py
-|   |       |-- app.py
-|   |       `-- static/ (frontend assets)
-|   |           |-- index.html
-|   |           |-- main.js
-|   |           `-- styles.css
-|-- tests/ (automated test suite)
-|   |-- README.md
-|   `-- test_api.py
-`-- touchdesigner/ (TouchDesigner project files)
-    |-- README.md
-    |-- example1.toe
-    `-- python1.py
-```
 
+
+## License
+
+Licensed under the [MIT License](./LICENSE).

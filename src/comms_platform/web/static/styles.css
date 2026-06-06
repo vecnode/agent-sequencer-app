@@ -1,5 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Global design tokens for the default (dark) theme. */
 :root {
   --bg: #0e0e0e;
   --surface: #161616;
@@ -22,9 +23,14 @@
   --placeholder-line: rgba(255, 255, 255, 0.03);
   --placeholder-overlay-top: rgba(255, 255, 255, 0.01);
   --placeholder-overlay-bottom: rgba(255, 255, 255, 0);
+  --scrollbar-track: #111111;
+  --scrollbar-thumb: #343a44;
+  --scrollbar-thumb-hover: #4a5463;
+  --font-ui: "Aptos", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
 }
 
+/* Light-theme token overrides, toggled via data-theme attribute. */
 html[data-theme="light"] {
   --bg: #f4f7fb;
   --surface: #ffffff;
@@ -47,8 +53,12 @@ html[data-theme="light"] {
   --placeholder-line: rgba(22, 32, 51, 0.06);
   --placeholder-overlay-top: rgba(22, 32, 51, 0.02);
   --placeholder-overlay-bottom: rgba(22, 32, 51, 0);
+  --scrollbar-track: #e5ebf4;
+  --scrollbar-thumb: #9aa9bf;
+  --scrollbar-thumb-hover: #7f91ab;
 }
 
+/* Mirrored light-theme variables at body level for broad CSS compatibility. */
 body[data-theme="light"] {
   --bg: #f4f7fb;
   --surface: #ffffff;
@@ -71,17 +81,47 @@ body[data-theme="light"] {
   --placeholder-line: rgba(22, 32, 51, 0.06);
   --placeholder-overlay-top: rgba(22, 32, 51, 0.02);
   --placeholder-overlay-bottom: rgba(22, 32, 51, 0);
+  --scrollbar-track: #e5ebf4;
+  --scrollbar-thumb: #9aa9bf;
+  --scrollbar-thumb-hover: #7f91ab;
 }
 
+/* Baseline document typography and color surface. */
 html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-ui);
+  font-size: 12px;
   line-height: 1.5;
 }
 
+/* Cross-browser themed scrollbar styling (Firefox + WebKit browsers). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 8px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* Application shell: header, tab rail, and scrollable content region. */
 .layout {
   display: grid;
   grid-template-rows: 48px 44px 1fr;
@@ -98,7 +138,7 @@ html, body {
 }
 
 .tab {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -154,7 +194,7 @@ header .sep { color: var(--border); }
 }
 
 .theme-toggle {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -201,7 +241,7 @@ header .sep { color: var(--border); }
 }
 
 .theme-option {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   width: 100%;
   font-size: 12px;
   text-transform: uppercase;
@@ -256,7 +296,7 @@ header .sep { color: var(--border); }
 
 main {
   display: block;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .tab-panel {
@@ -288,15 +328,26 @@ main {
   min-height: 0;
 }
 
+/* Fixed desktop dashboard architecture with explicit column/row geometry. */
 .dashboard-grid {
+  --dashboard-gap: 10px;
+  --dashboard-left-width: 320px;
+  --dashboard-center-width: 576px;
+  --dashboard-right-width: 340px;
+  --dashboard-top-height: 500px;
+  --dashboard-row-height: calc((var(--dashboard-top-height) - var(--dashboard-gap)) / 2);
+  --dashboard-bottom-row-height: 180px;
+  --dashboard-input-row-height: 220px;
   display: grid;
-  grid-template-columns: minmax(280px, max-content) minmax(0, 1fr) 340px;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: var(--dashboard-left-width) var(--dashboard-center-width) var(--dashboard-right-width);
+  grid-template-rows: var(--dashboard-row-height) var(--dashboard-row-height) var(--dashboard-bottom-row-height) var(--dashboard-input-row-height);
+  gap: var(--dashboard-gap);
   padding: 10px;
-  height: 100%;
+  height: auto;
+  width: max-content;
+  min-width: max-content;
   min-height: 0;
-  align-items: start;
+  align-items: stretch;
 }
 
 .dashboard-block {
@@ -310,15 +361,20 @@ main {
     var(--surface-alt);
 }
 
+/* Left column: control-focused widgets with fixed row occupancy. */
 .widget-agent {
   grid-column: 1;
   grid-row: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: flex-start;
+  text-align: left;
   gap: 10px;
   padding: 12px;
-  align-self: start;
+  align-self: stretch;
+  height: 100%;
+  overflow: hidden;
 }
 
 .widget-settings {
@@ -326,9 +382,14 @@ main {
   grid-row: 2;
   display: grid;
   grid-template-rows: auto;
+  align-content: start;
+  justify-items: start;
   gap: 10px;
   padding: 12px;
-  align-self: start;
+  align-self: stretch;
+  height: 100%;
+  overflow: hidden;
+  text-align: left;
 }
 
 .widget-ollama {
@@ -336,22 +397,29 @@ main {
   grid-row: 3;
   display: grid;
   grid-template-rows: auto;
+  align-content: start;
+  justify-items: start;
   gap: 10px;
   padding: 12px;
-  align-self: start;
+  align-self: stretch;
+  height: 100%;
+  overflow: hidden;
+  text-align: left;
 }
 
 .widget-terminal {
   grid-column: 2;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 2;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 10px;
   padding: 12px;
-  height: 500px;
-  max-height: 500px;
+  height: var(--dashboard-top-height);
+  max-height: var(--dashboard-top-height);
   min-height: 0;
   overflow: hidden;
+  align-self: stretch;
+  text-align: left;
 }
 
 .widget-user-input {
@@ -361,24 +429,67 @@ main {
   grid-template-rows: auto 1fr;
   gap: 10px;
   padding: 12px;
+  height: 100%;
+  width: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .widget-agent-state {
   grid-column: 3;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 2;
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 8px;
   padding: 12px;
-  width: 340px;
-  min-width: 340px;
-  max-width: 340px;
-  height: 500px;
-  max-height: 500px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: var(--dashboard-top-height);
+  max-height: var(--dashboard-top-height);
+  min-height: 0;
+  align-self: stretch;
+}
+
+.widget-ops {
+  grid-column: 2 / span 2;
+  grid-row: 3;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.widget-inference-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
   min-height: 0;
 }
 
+.widget-inference-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.widget-inference-input {
+  min-height: 32px;
+  height: 32px;
+  max-height: 32px;
+  flex: 0 0 auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.2;
+  resize: none;
+}
+
+/* Agent state inspector utility bar and JSON output region. */
 .widget-agent-state-toolbar {
   display: flex;
   align-items: center;
@@ -416,6 +527,7 @@ main {
   word-break: break-word;
 }
 
+/* User command composition surface. */
 .widget-user-input-body {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -439,6 +551,15 @@ main {
   color: var(--text);
 }
 
+/* Keep Block 06 inference text field compact (single-line input). */
+.widget-input.widget-inference-input {
+  min-height: 32px;
+  height: 32px;
+  max-height: 32px;
+  line-height: 1.2;
+}
+
+/* Terminal stream viewport and semantic line coloring. */
 .widget-terminal-body {
   overflow-y: auto;
   overflow-x: auto;
@@ -450,6 +571,7 @@ main {
   line-height: 1.45;
   height: 100%;
   min-height: 0;
+  text-align: left;
 }
 
 .widget-terminal-body div,
@@ -497,13 +619,56 @@ main {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
+  align-content: flex-start;
+  text-align: left;
+  width: 100%;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.engine-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.engine-tab {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.engine-tab.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.engine-tab-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.engine-tab-panel[hidden] {
+  display: none;
 }
 
 .td-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -516,13 +681,14 @@ main {
 .widget-select {
   width: 100%;
   max-width: 100%;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 11px;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--input-bg);
   color: var(--text);
+  text-align: left;
 }
 
 .widget-select:disabled {
@@ -541,10 +707,12 @@ main {
   letter-spacing: 0.08em;
   color: var(--muted);
   font-size: 11px;
+  text-align: left;
 }
 
 .widget-agent-controls {
   display: flex;
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -554,7 +722,7 @@ main {
 }
 
 .agent-btn {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 11px;
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -687,10 +855,6 @@ main {
   padding: 8px 0;
 }
 
-#feed::-webkit-scrollbar { width: 6px; }
-#feed::-webkit-scrollbar-track { background: transparent; }
-#feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
 .message {
   display: grid;
   grid-template-columns: 110px 1.4fr 1fr 0.9fr;
@@ -746,6 +910,7 @@ main {
   opacity: 0.3;
 }
 
+/* Mobile breakpoint: collapse dashboard to stacked rows and clear fixed sizing. */
 @media (max-width: 900px) {
   .layout {
     grid-template-rows: auto auto 1fr;
@@ -764,31 +929,34 @@ main {
 
   .dashboard-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: repeat(6, minmax(110px, auto));
+    grid-template-rows: none;
+    grid-auto-rows: minmax(110px, auto);
     align-items: stretch;
-  }
-
-  .widget-terminal {
-    grid-column: auto;
-    grid-row: auto;
-    height: 500px;
-    max-height: 500px;
-    min-height: 500px;
   }
 
   .widget-agent,
   .widget-settings,
   .widget-ollama,
+  .widget-ops,
+  .widget-terminal,
   .widget-user-input,
   .widget-agent-state {
     grid-column: auto;
     grid-row: auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    max-height: none;
   }
 
   .widget-agent-state {
-    height: auto;
-    min-height: 200px;
-    max-height: 200px;
+    min-height: 220px;
+  }
+
+  .widget-terminal {
+    min-height: 280px;
   }
 
   .widget-user-input-body {

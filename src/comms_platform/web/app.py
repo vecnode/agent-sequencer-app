@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -202,6 +203,76 @@ def _fetch_ollama_status(base_url: str, timeout: float = 3.0) -> dict:
         }
 
 
+def _resolve_ollama_executable() -> Path | None:
+    candidates: list[Path] = []
+    which_path = shutil.which("ollama")
+    if which_path:
+        candidates.append(Path(which_path))
+
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if local_appdata:
+        candidates.extend(
+            [
+                Path(local_appdata) / "Programs" / "Ollama" / "ollama.exe",
+                Path(local_appdata) / "Programs" / "Ollama" / "ollama",
+            ]
+        )
+
+    program_files = os.getenv("PROGRAMFILES")
+    if program_files:
+        candidates.extend(
+            [
+                Path(program_files) / "Ollama" / "ollama.exe",
+                Path(program_files) / "Ollama" / "ollama",
+            ]
+        )
+
+    program_files_x86 = os.getenv("PROGRAMFILES(X86)")
+    if program_files_x86:
+        candidates.extend(
+            [
+                Path(program_files_x86) / "Ollama" / "ollama.exe",
+                Path(program_files_x86) / "Ollama" / "ollama",
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _open_ollama_application() -> dict:
+    ollama_exe = _resolve_ollama_executable()
+    if ollama_exe is None:
+        return {
+            "ok": False,
+            "error": "ollama_not_installed",
+        }
+
+    try:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(
+            [str(ollama_exe), "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(ollama_exe.parent),
+            creationflags=creationflags,
+        )
+        return {
+            "ok": True,
+            "opened": True,
+            "path": str(ollama_exe),
+            "command": "serve",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "path": str(ollama_exe),
+        }
+
+
 def _generate_ollama_reply(
     base_url: str,
     prompt: str,
@@ -276,6 +347,38 @@ def _get_tts_engine() -> Any:
         return _tts_engine
 
 
+def _set_tts_engine_loaded(loaded: bool) -> dict:
+    global _tts_engine
+    with _tts_engine_lock:
+        if loaded:
+            if _tts_engine is None:
+                from supertonic import TTS
+
+                _tts_engine = TTS(auto_download=True)
+                logger.info("Supertonic TTS engine initialized.")
+            return {"ok": True, "engine": "SuperTonic 3", "loaded": True}
+
+        # Best-effort cleanup for SDKs that expose a close/release method.
+        if _tts_engine is not None:
+            close_fn = getattr(_tts_engine, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    pass
+        _tts_engine = None
+        return {"ok": True, "engine": "SuperTonic 3", "loaded": False}
+
+
+def _get_tts_engine_loaded_state() -> dict:
+    with _tts_engine_lock:
+        return {
+            "ok": True,
+            "engine": "SuperTonic 3",
+            "loaded": _tts_engine is not None,
+        }
+
+
 def _coerce_duration_seconds(value: Any) -> float:
     """Best-effort conversion for SDK duration outputs (float, numpy scalar, or arrays)."""
     try:
@@ -347,6 +450,24 @@ def _prewarm_tts_engine() -> None:
         logger.info("Supertonic TTS prewarm completed.")
     except Exception as exc:
         logger.warning("Supertonic TTS prewarm failed: %s", exc)
+
+
+def _check_tts_engine_status(voice_name: str) -> dict:
+    try:
+        state = _get_tts_engine_loaded_state()
+        return {
+            "ok": True,
+            "engine": state["engine"],
+            "loaded": state["loaded"],
+            "voice_name": voice_name,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "engine": "SuperTonic 3",
+            "voice_name": voice_name,
+            "error": str(exc),
+        }
 
 
 def _play_audio_file(audio_path: Path) -> dict:
@@ -596,7 +717,6 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             "osc_input": f"{signal_gateway.osc_input_host}:{signal_gateway.osc_input_port}",
             "agent_running": master_agent.is_running,
             "agent_heartbeats": master_agent.heartbeat_count,
-            "agent_broadcast": master_agent.broadcast_enabled,
         }
 
     @app.post("/api/unreal/event")
@@ -626,9 +746,6 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             agent_changed,
             agent_running,
         )
-
-        if agent_action == "start" and agent_changed and agent_running:
-            _schedule_agent_startup_narration("unreal_event")
 
         event_bus.publish(
             {
@@ -683,8 +800,6 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     @app.post("/api/agent/start")
     async def start_agent():
         started = master_agent.start()
-        if started and master_agent.is_running:
-            _schedule_agent_startup_narration("api_start")
         return {
             "ok": True,
             "started": started,
@@ -697,24 +812,6 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         return {
             "ok": True,
             "stopped": stopped,
-            "running": master_agent.is_running,
-        }
-
-    @app.post("/api/agent/broadcast/on")
-    async def enable_agent_broadcast():
-        enabled = master_agent.set_broadcast(True)
-        return {
-            "ok": True,
-            "broadcast": enabled,
-            "running": master_agent.is_running,
-        }
-
-    @app.post("/api/agent/broadcast/off")
-    async def disable_agent_broadcast():
-        enabled = master_agent.set_broadcast(False)
-        return {
-            "ok": True,
-            "broadcast": enabled,
             "running": master_agent.is_running,
         }
 
@@ -800,6 +897,24 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             },
         )
 
+    @app.get("/api/tts/status")
+    async def tts_status(voice_name: str = _TTS_DEFAULT_VOICE):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _check_tts_engine_status, voice_name)
+        return result
+
+    @app.post("/api/tts/engine/on")
+    async def tts_engine_on():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _set_tts_engine_loaded, True)
+        return result
+
+    @app.post("/api/tts/engine/off")
+    async def tts_engine_off():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _set_tts_engine_loaded, False)
+        return result
+
     @app.post("/api/touchdesigner/run-example")
     async def run_touchdesigner_example():
         toe_path = EXAMPLE_TOE_PATH.resolve()
@@ -855,6 +970,14 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
     async def get_ollama_status():
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_ollama_status, _ollama_url)
+
+    @app.post("/api/ollama/open")
+    async def open_ollama():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _open_ollama_application)
+        if result.get("ok"):
+            return result
+        return JSONResponse(status_code=503, content=result)
 
     @app.post("/api/signals/publish")
     async def publish_signal(payload: SignalPayload):

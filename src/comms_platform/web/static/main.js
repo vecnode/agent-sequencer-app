@@ -12,12 +12,15 @@ const statOscIn = document.getElementById('stat-osc-in');
 const statOscOut = document.getElementById('stat-osc-out');
 const statClients = document.getElementById('stat-clients');
 const btnAgentToggle = document.getElementById('btn-agent-toggle');
-const btnBroadcastToggle = document.getElementById('btn-broadcast-toggle');
 const btnRunExampleToe = document.getElementById('btn-run-example-toe');
 const btnCheckTd = document.getElementById('btn-check-td');
 const btnSendTdTestData = document.getElementById('btn-send-td-test-data');
 const btnSendUe5 = document.getElementById('btn-send-ue5');
 const btnCheckOllama = document.getElementById('btn-check-ollama');
+const btnOpenOllama = document.getElementById('btn-open-ollama');
+const btnInferenceToggle = document.getElementById('btn-inference-toggle');
+const inferenceDot = document.getElementById('inference-dot');
+const inferenceStatus = document.getElementById('inference-status');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
 const agentStateSectionSelect = document.getElementById('agent-state-section');
@@ -25,7 +28,6 @@ const btnAgentStateRefresh = document.getElementById('btn-agent-state-refresh');
 const btnAgentStateCopy = document.getElementById('btn-agent-state-copy');
 const agentStateView = document.getElementById('agent-state-view');
 const agentStatus = document.getElementById('agent-status');
-const agentBroadcast = document.getElementById('agent-broadcast');
 const tdLaunchStatus = document.getElementById('td-launch-status');
 const tdSendStatus = document.getElementById('td-send-status');
 const ollamaStatus = document.getElementById('ollama-status');
@@ -37,16 +39,18 @@ const themeDropdown = document.getElementById('theme-dropdown');
 const themeCurrentLabel = document.getElementById('theme-current-label');
 const themeOptions = document.querySelectorAll('.theme-option');
 const tabs = document.querySelectorAll('.tabs .tab');
+const engineTabs = document.querySelectorAll('.engine-tab');
+const enginePanels = document.querySelectorAll('.engine-tab-panel');
 const tabPanels = {
 	dashboard: document.getElementById('panel-dashboard'),
 	incoming: document.getElementById('panel-incoming'),
 };
 
+// Unified client-side state used to drive the Agent State inspector.
 // Frontend state projection of the agent/runtime surface known by this UI.
 const agentState = {
 	agent: {
 		is_running: false,
-		broadcast_enabled: false,
 		last_action: null,
 	},
 	stream: {
@@ -69,20 +73,28 @@ const agentState = {
 		models_count: 0,
 		selected_model: null,
 	},
+	inference: {
+		engine: 'SuperTonic 3',
+		loaded: false,
+		status: 'OFFLINE',
+		last_error: null,
+	},
 	ui: {
 		theme: 'light',
 		active_tab: 'dashboard',
 	},
 };
 
+// Volatile UI runtime flags and limits.
 // Runtime UI state
 let count   = 0;
 let paused  = false;
 let agentRunning = false;
-let broadcastEnabled = false;
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
 const THEME_STORAGE_KEY = 'comms-platform-theme';
+
+// --- Agent State Inspector -------------------------------------------------
 
 function renderAgentState() {
 	if (!agentStateView) return;
@@ -101,6 +113,8 @@ if (ollamaModelSelect) {
 		renderAgentState();
 	});
 }
+
+// --- Theme System ----------------------------------------------------------
 
 // Theme dropdown helpers
 function closeThemeDropdown() {
@@ -174,6 +188,8 @@ document.addEventListener('keydown', (event) => {
 // Initialize theme on load.
 applyTheme(getSavedTheme());
 
+// --- Terminal Rendering ----------------------------------------------------
+
 // Keeps the terminal panel scrolled to latest output.
 function forceTerminalScroll() {
 	terminalFeed.scrollTop = terminalFeed.scrollHeight;
@@ -235,6 +251,27 @@ tabs.forEach((tab) => {
 	});
 });
 
+function setActiveEngineTab(tabName) {
+	engineTabs.forEach((tab) => {
+		const isActive = tab.dataset.engineTab === tabName;
+		tab.classList.toggle('active', isActive);
+		tab.setAttribute('aria-selected', String(isActive));
+	});
+	enginePanels.forEach((panel) => {
+		const isActive = panel.dataset.enginePanel === tabName;
+		panel.classList.toggle('active', isActive);
+		panel.hidden = !isActive;
+	});
+}
+
+engineTabs.forEach((tab) => {
+	tab.addEventListener('click', () => {
+		setActiveEngineTab(tab.dataset.engineTab);
+	});
+});
+
+// --- Backend Polling and Sync ---------------------------------------------
+
 // Polls backend status and reflects it in the top-level dashboard controls.
 async function pollStatus() {
 	try {
@@ -246,10 +283,7 @@ async function pollStatus() {
 		agentState.connections.sse_clients = json.sse_clients;
 		agentState.stream.osc_input = json.osc_input;
 		agentState.stream.osc_output = json.osc_output;
-		setAgentUi(
-			Boolean(json.agent_running),
-			Boolean(json.agent_broadcast)
-		);
+		setAgentUi(Boolean(json.agent_running));
 		renderAgentState();
 	} catch (_) {}
 }
@@ -293,6 +327,8 @@ async function copyAgentStateText() {
 }
 pollStatus();
 setInterval(pollStatus, 1000);
+
+// --- Incoming Stream (SSE) -------------------------------------------------
 
 // Opens SSE stream and renders log/stream messages in the incoming feed.
 function connect() {
@@ -374,6 +410,8 @@ function connect() {
 
 connect();
 
+// --- TTS Playback Helpers --------------------------------------------------
+
 function trimTerminalRows() {
 	while (terminalFeed.children.length > TERMINAL_MAX_ROWS) {
 		terminalFeed.removeChild(terminalFeed.firstChild);
@@ -450,6 +488,8 @@ function pushAgentReplyWithListen(text) {
 	trimTerminalRows();
 }
 
+// --- Toolbar and Agent Controls -------------------------------------------
+
 // General toolbar controls.
 document.getElementById('btn-clear').addEventListener('click', () => {
 	feed.innerHTML = '';
@@ -476,26 +516,17 @@ function escHtml(str) {
 		.replace(/>/g, '&gt;');
 }
 
-// Updates Agent/Broadcast visual state from backend status.
-function setAgentUi(isRunning, isBroadcastEnabled) {
+// Updates Agent visual state from backend status.
+function setAgentUi(isRunning) {
 	agentRunning = isRunning;
-	broadcastEnabled = isBroadcastEnabled;
 	agentState.agent.is_running = isRunning;
-	agentState.agent.broadcast_enabled = isBroadcastEnabled;
 	agentStatus.textContent = isRunning ? 'ON' : 'OFF';
 	agentStatus.className = isRunning ? 'agent-status-on' : 'agent-status-off';
-	agentBroadcast.textContent = isBroadcastEnabled ? 'ON' : 'OFF';
-	agentBroadcast.className = isBroadcastEnabled ? 'agent-status-on' : 'agent-status-off';
 	btnAgentToggle.textContent = isRunning ? 'Agent ON' : 'Agent OFF';
 	btnAgentToggle.classList.toggle('agent-btn-on', isRunning);
 	btnAgentToggle.classList.toggle('agent-btn-off', !isRunning);
 	btnAgentToggle.setAttribute('aria-pressed', String(isRunning));
 	btnAgentToggle.disabled = false;
-	btnBroadcastToggle.textContent = isBroadcastEnabled ? 'Broadcast ON' : 'Broadcast OFF';
-	btnBroadcastToggle.classList.toggle('agent-btn-on', isBroadcastEnabled);
-	btnBroadcastToggle.classList.toggle('agent-btn-off', !isBroadcastEnabled);
-	btnBroadcastToggle.setAttribute('aria-pressed', String(isBroadcastEnabled));
-	btnBroadcastToggle.disabled = false;
 	renderAgentState();
 }
 
@@ -513,29 +544,7 @@ async function toggleAgent() {
 	}
 }
 
-// Single Broadcast toggle: updates backend agent streaming mode on/off.
-async function toggleBroadcast() {
-	btnBroadcastToggle.disabled = true;
-	const nextEnabled = !broadcastEnabled;
-	const url = nextEnabled ? '/api/agent/broadcast/on' : '/api/agent/broadcast/off';
-	agentState.agent.last_action = nextEnabled ? 'broadcast_on_requested' : 'broadcast_off_requested';
-	renderAgentState();
-	try {
-		const response = await fetch(url, { method: 'POST' });
-		if (response.ok) {
-			pushTerminalLine(
-				nextEnabled ? '[AGENT] Broadcast turned ON' : '[AGENT] Broadcast turned OFF',
-				'terminal-log-info'
-			);
-		} else {
-			pushTerminalLine('[AGENT] ERROR toggling Broadcast (request failed)', 'terminal-log-error');
-		}
-		await pollStatus();
-	} catch (err) {
-		pushTerminalLine(`[AGENT] ERROR toggling Broadcast (${err})`, 'terminal-log-error');
-		await pollStatus();
-	}
-}
+// --- TouchDesigner / Unreal / Ollama Actions ------------------------------
 
 function setTdLaunchStatus(state, klass) {
 	tdLaunchStatus.textContent = state;
@@ -655,9 +664,13 @@ async function sendToUe5() {
 }
 
 function setOllamaStatus(isUp, modelCount) {
-	ollamaStatus.textContent = isUp ? 'ONLINE' : 'OFFLINE';
-	ollamaStatus.className = isUp ? 'agent-status-on' : 'agent-status-off';
-	ollamaModelCount.textContent = String(modelCount ?? 0);
+	if (ollamaStatus) {
+		ollamaStatus.textContent = isUp ? 'ONLINE' : 'OFFLINE';
+		ollamaStatus.className = isUp ? 'agent-status-on' : 'agent-status-off';
+	}
+	if (ollamaModelCount) {
+		ollamaModelCount.textContent = String(modelCount ?? 0);
+	}
 	agentState.ollama.status = isUp ? 'ONLINE' : 'OFFLINE';
 	agentState.ollama.models_count = modelCount ?? 0;
 	renderAgentState();
@@ -665,6 +678,7 @@ function setOllamaStatus(isUp, modelCount) {
 
 // Populates the model selector from /api/ollama/status response.
 function populateOllamaModels(models) {
+	if (!ollamaModelSelect) return;
 	ollamaModelSelect.innerHTML = '';
 	if (!Array.isArray(models) || models.length === 0) {
 		ollamaModelSelect.disabled = true;
@@ -688,7 +702,9 @@ function populateOllamaModels(models) {
 
 // Checks Ollama health and updates status + model list.
 async function checkOllamaStatus(silent = false) {
-	btnCheckOllama.disabled = true;
+	if (btnCheckOllama) {
+		btnCheckOllama.disabled = true;
+	}
 	setOllamaStatus(false, 0);
 	if (!silent) {
 		pushTerminalLine('[OLLAMA] Checking service status...', 'terminal-log-info');
@@ -711,9 +727,92 @@ async function checkOllamaStatus(silent = false) {
 			pushTerminalLine(`[OLLAMA] OFFLINE (${err})`, 'terminal-log-error');
 		}
 	} finally {
-		btnCheckOllama.disabled = false;
+		if (btnCheckOllama) {
+			btnCheckOllama.disabled = false;
+		}
 	}
 }
+
+function setInferenceStatus(isReady, error = null) {
+	if (inferenceDot) {
+		inferenceDot.className = isReady ? 'dot connected' : 'dot disconnected';
+	}
+	if (inferenceStatus) {
+		inferenceStatus.textContent = isReady ? 'ONLINE' : 'OFFLINE';
+		inferenceStatus.className = isReady ? 'agent-status-on' : 'agent-status-off';
+	}
+	if (btnInferenceToggle) {
+		btnInferenceToggle.textContent = isReady ? 'TTS ON' : 'TTS OFF';
+		btnInferenceToggle.classList.toggle('agent-btn-on', isReady);
+		btnInferenceToggle.classList.toggle('agent-btn-off', !isReady);
+		btnInferenceToggle.setAttribute('aria-pressed', String(isReady));
+	}
+	agentState.inference.loaded = isReady;
+	agentState.inference.status = isReady ? 'ONLINE' : 'OFFLINE';
+	agentState.inference.last_error = error;
+	renderAgentState();
+}
+
+async function syncInferenceStatus(silent = false) {
+	if (btnInferenceToggle) {
+		btnInferenceToggle.disabled = true;
+	}
+	try {
+		const res = await fetch('/api/tts/status');
+		const json = await res.json();
+		const isReady = Boolean(res.ok && json.ok);
+		setInferenceStatus(isReady, json.error || null);
+		if (!silent) {
+			pushTerminalLine(
+				isReady ? '[INFERENCE] SuperTonic 3 is loaded (ON)' : '[INFERENCE] SuperTonic 3 is unloaded (OFF)',
+				'terminal-log-info'
+			);
+		}
+	} catch (err) {
+		setInferenceStatus(false, String(err));
+		if (!silent) {
+			pushTerminalLine(`[INFERENCE] ERROR reading engine state (${err})`, 'terminal-log-error');
+		}
+	} finally {
+		if (btnInferenceToggle) {
+			btnInferenceToggle.disabled = false;
+		}
+	}
+}
+
+async function toggleInferenceEngine() {
+	if (!btnInferenceToggle) return;
+	btnInferenceToggle.disabled = true;
+	const shouldEnable = !agentState.inference.loaded;
+	const url = shouldEnable ? '/api/tts/engine/on' : '/api/tts/engine/off';
+	pushTerminalLine(
+		shouldEnable ? '[INFERENCE] Loading SuperTonic 3...' : '[INFERENCE] Unloading SuperTonic 3...',
+		'terminal-log-info'
+	);
+	try {
+		const res = await fetch(url, { method: 'POST' });
+		const json = await res.json();
+		if (!res.ok) {
+			const errorMessage = json.error || `request failed (${res.status})`;
+			setInferenceStatus(false, errorMessage);
+			pushTerminalLine(`[INFERENCE] ERROR (${errorMessage})`, 'terminal-log-error');
+			return;
+		}
+		const loaded = Boolean(json.loaded);
+		setInferenceStatus(loaded, null);
+		pushTerminalLine(
+			loaded ? '[INFERENCE] SuperTonic 3 loaded (ON)' : '[INFERENCE] SuperTonic 3 unloaded (OFF)',
+			'terminal-log-info'
+		);
+	} catch (err) {
+		setInferenceStatus(false, String(err));
+		pushTerminalLine(`[INFERENCE] ERROR (${err})`, 'terminal-log-error');
+	} finally {
+		btnInferenceToggle.disabled = false;
+	}
+}
+
+// --- User Input / Agent Messaging -----------------------------------------
 
 // Sends user message to the backend agent and appends replies to terminal panel.
 async function sendUserInputToAgent() {
@@ -754,12 +853,33 @@ async function sendUserInputToAgent() {
 }
 
 btnAgentToggle.addEventListener('click', toggleAgent);
-btnBroadcastToggle.addEventListener('click', toggleBroadcast);
 btnRunExampleToe.addEventListener('click', runExampleToe);
 btnCheckTd.addEventListener('click', checkTdProcesses);
 btnSendTdTestData.addEventListener('click', sendTdTestData);
 btnSendUe5.addEventListener('click', sendToUe5);
 btnCheckOllama.addEventListener('click', checkOllamaStatus);
+if (btnOpenOllama) {
+	btnOpenOllama.addEventListener('click', async () => {
+		btnOpenOllama.disabled = true;
+		pushTerminalLine('[OLLAMA] Opening Ollama...', 'terminal-log-info');
+		try {
+			const res = await fetch('/api/ollama/open', { method: 'POST' });
+			const json = await res.json();
+			if (!res.ok || !json.ok) {
+				throw new Error(json.error || `request failed (${res.status})`);
+			}
+			pushTerminalLine('[OLLAMA] Ollama launch requested', 'terminal-log-info');
+			await checkOllamaStatus(true);
+		} catch (err) {
+			pushTerminalLine(`[OLLAMA] ERROR opening Ollama (${err})`, 'terminal-log-error');
+		} finally {
+			btnOpenOllama.disabled = false;
+		}
+	});
+}
+if (btnInferenceToggle) {
+	btnInferenceToggle.addEventListener('click', toggleInferenceEngine);
+}
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {
 	btnAgentStateRefresh.addEventListener('click', async () => {
@@ -778,7 +898,7 @@ userInputText.addEventListener('keydown', (e) => {
 	}
 });
 
-renderAgentState();
+// --- Initial Bootstrapping -------------------------------------------------
 
-// Initial Ollama status probe on page load.
-checkOllamaStatus();
+renderAgentState();
+syncInferenceStatus(true);

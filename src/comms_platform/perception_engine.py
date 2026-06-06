@@ -207,11 +207,6 @@ class PerceptionEngine:
 
     def _extract_tool_name(self, text: str) -> str | None:
         lowered = re.sub(r"\s+", " ", text.lower()).strip()
-
-        if "broadcast" in lowered and ("off" in lowered or "disable" in lowered):
-            return "broadcast_off"
-        if "broadcast" in lowered and ("on" in lowered or "enable" in lowered):
-            return "broadcast_on"
         if "stop" in lowered and "agent" in lowered:
             return "agent_stop"
         if "start" in lowered and "agent" in lowered:
