@@ -2,14 +2,18 @@
 
 Under active development. 
 
-This repository contains a communications platform of TTS and TTI with a master agent. Interop with TouchDesigner, Unreal Engine, Ollama, TTS model Supertonic 3, TTI model SDXL-Base-1.
+This repository contains a communications platform of TTS and TTI with a master agent.  
+Interop with Unreal Engine, TouchDesigner, Ollama, Diffusers, XFormers.
+
+- TTS model Supertonic 3
+- TTI model SDXL-Base-1
 
 Development Guidelines:
 
 - A master agent controls and is accessed by the platform.
 - Coordination is mandatory for critical environments.
 - Expose API and execution timings.
-
+- Local and field-first architecture
 
 ## Reproduce Windows
 
@@ -56,14 +60,15 @@ uv pip install -r requirements.txt
 - Launches TouchDesigner example workflows.
 - Checks TouchDesigner process state.
 - Sends test data and UE5 bridge messages.
-</details>
-
-<details>
-<summary>Block 05 - Ollama</summary>
-
 - Checks whether Ollama is reachable on the host.
 - Opens Ollama from the installed Windows executable when available.
 - Lets you pick an available Ollama model for agent chat.
+</details>
+
+<details>
+<summary>Block 05 - Empty</summary>
+
+- Empty
 </details>
 
 <details>
@@ -71,7 +76,7 @@ uv pip install -r requirements.txt
 
 - Hosts two inference modules in a single control surface.
 - SuperTonic 3: load/unload TTS engine and monitor engine status.
-- SDXL Base 1: load/unload image pipeline, submit prompts, and preview generated images.
+- SDXL Base 1: load/unload image pipeline, submit prompts, and preview generated images. Uses xFormers attention when available for faster generation.
 </details>
 
 <details>

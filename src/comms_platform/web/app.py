@@ -9,6 +9,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,14 +19,21 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import httpx
+import numpy as np
 from fastapi import Body, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from PIL import Image
 
 from ..utils.logger import get_logger
 
 logger = get_logger("web.app")
+warnings.filterwarnings(
+    "ignore",
+    message=r"`upcast_vae` is deprecated and will be removed in version 1\.0\.0\..*",
+    category=FutureWarning,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -418,6 +426,20 @@ def _coerce_duration_seconds(value: Any) -> float:
         except Exception:
             pass
 
+
+def _sanitize_sdxl_image(image_data: Any) -> Image.Image:
+    """Clamp SDXL output to finite RGB pixel values before saving."""
+    array = np.asarray(image_data, dtype=np.float32)
+    array = np.nan_to_num(array, nan=0.0, posinf=1.0, neginf=0.0)
+    array = np.clip(array, 0.0, 1.0)
+    if array.ndim == 2:
+        array = np.stack([array, array, array], axis=-1)
+    if array.ndim == 3 and array.shape[-1] > 3:
+        array = array[..., :3]
+    if array.ndim != 3 or array.shape[-1] != 3:
+        raise ValueError(f"Unexpected SDXL image shape: {array.shape}")
+    return Image.fromarray((array * 255.0).round().astype(np.uint8), mode="RGB")
+
     if isinstance(value, (list, tuple)) and value:
         try:
             return float(value[0])
@@ -522,34 +544,40 @@ def _get_sdxl_pipeline() -> Any:
     global _sdxl_pipeline
     with _sdxl_engine_lock:
         if _sdxl_pipeline is None:
-            from diffusers import DiffusionPipeline
+            xformers_logger = logging.getLogger("xformers")
+            previous_xformers_level = xformers_logger.level
+            xformers_logger.setLevel(logging.ERROR)
+            try:
+                from diffusers import DiffusionPipeline
 
-            torch, device, dtype, fallback_reason = _get_sdxl_runtime()
-            logger.info(
-                "SDXL runtime probe: torch=%s torch_cuda=%s torch_version_cuda=%s",
-                getattr(torch, "__version__", "unknown"),
-                torch.cuda.is_available(),
-                getattr(getattr(torch, "version", None), "cuda", None),
-            )
-            logger.info("Initializing SDXL Base 1 pipeline on %s (first load may take several minutes).", device)
-            if device == "cpu" and fallback_reason:
-                logger.warning("SDXL CUDA not active, using CPU (%s)", fallback_reason)
-            _sdxl_pipeline = DiffusionPipeline.from_pretrained(_SDXL_MODEL_ID, torch_dtype=dtype)
-            _sdxl_pipeline = _sdxl_pipeline.to(device)
-            _sdxl_pipeline.set_progress_bar_config(disable=True)
-            if device == "cuda":
-                try:
-                    _sdxl_pipeline.enable_xformers_memory_efficient_attention()
-                    logger.info("SDXL xFormers attention enabled.")
-                except Exception:
-                    logger.info("SDXL xFormers attention unavailable; using default attention.")
-                try:
-                    import torch
+                torch, device, dtype, fallback_reason = _get_sdxl_runtime()
+                logger.info(
+                    "SDXL runtime probe: torch=%s torch_cuda=%s torch_version_cuda=%s",
+                    getattr(torch, "__version__", "unknown"),
+                    torch.cuda.is_available(),
+                    getattr(getattr(torch, "version", None), "cuda", None),
+                )
+                logger.info("Initializing SDXL Base 1 pipeline on %s (first load may take several minutes).", device)
+                if device == "cpu" and fallback_reason:
+                    logger.warning("SDXL CUDA not active, using CPU (%s)", fallback_reason)
+                _sdxl_pipeline = DiffusionPipeline.from_pretrained(_SDXL_MODEL_ID, torch_dtype=dtype)
+                _sdxl_pipeline = _sdxl_pipeline.to(device)
+                _sdxl_pipeline.set_progress_bar_config(disable=True)
+                if device == "cuda":
+                    try:
+                        _sdxl_pipeline.enable_xformers_memory_efficient_attention()
+                        logger.info("SDXL xFormers attention enabled.")
+                    except Exception:
+                        logger.info("SDXL xFormers attention unavailable; using default attention.")
+                    try:
+                        import torch
 
-                    _sdxl_pipeline.unet.to(memory_format=torch.channels_last)
-                except Exception:
-                    pass
-            logger.info("SDXL Base 1 pipeline initialized on %s.", device)
+                        _sdxl_pipeline.unet.to(memory_format=torch.channels_last)
+                    except Exception:
+                        pass
+                logger.info("SDXL Base 1 pipeline initialized on %s.", device)
+            finally:
+                xformers_logger.setLevel(previous_xformers_level)
         return _sdxl_pipeline
 
 
@@ -618,21 +646,14 @@ def _generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps
         started_at = datetime.now(timezone.utc)
         pipeline = _get_sdxl_pipeline()
         with torch.inference_mode():
-            if device == "cuda":
-                with torch.autocast("cuda", dtype=torch.float16):
-                    image = pipeline(
-                        prompt=prompt,
-                        guidance_scale=float(guidance_scale),
-                        num_inference_steps=int(num_inference_steps),
-                        generator=generator,
-                    ).images[0]
-            else:
-                image = pipeline(
-                    prompt=prompt,
-                    guidance_scale=float(guidance_scale),
-                    num_inference_steps=int(num_inference_steps),
-                    generator=generator,
-                ).images[0]
+            image_result = pipeline(
+                prompt=prompt,
+                guidance_scale=float(guidance_scale),
+                num_inference_steps=int(num_inference_steps),
+                generator=generator,
+                output_type="np",
+            ).images[0]
+        image = _sanitize_sdxl_image(image_result)
         elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
 
         output_dir = PROJECT_ROOT / "output"

@@ -838,7 +838,7 @@ function setSdxlStatus(isReady, error = null) {
 		sdxlStatus.className = isReady ? 'agent-status-on' : 'agent-status-off';
 	}
 	if (btnSdxlToggle) {
-		btnSdxlToggle.textContent = isReady ? 'SDXL ON' : 'SDXL OFF';
+		btnSdxlToggle.textContent = isReady ? 'TTI ON' : 'TTI OFF';
 		btnSdxlToggle.classList.toggle('agent-btn-on', isReady);
 		btnSdxlToggle.classList.toggle('agent-btn-off', !isReady);
 		btnSdxlToggle.setAttribute('aria-pressed', String(isReady));

@@ -41,6 +41,14 @@ if errorlevel 1 (
 	echo [setup] CUDA torch wheel is active.
 )
 
+echo [setup] Installing xFormers acceleration (0.0.29.post2)...
+uv pip install --no-deps --upgrade xformers==0.0.29.post2 >nul 2>&1
+if errorlevel 1 (
+	echo [setup] xFormers install failed; continuing without it.
+) else (
+	echo [setup] xFormers acceleration is active.
+)
+
 set "chrome_exe="
 if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
 if not defined chrome_exe if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
