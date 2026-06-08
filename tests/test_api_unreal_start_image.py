@@ -13,11 +13,11 @@ def test_unreal_event_start_image_routes_to_image_generation():
     )
 
     with patch(
-        "comms_platform.web.app._generate_sdxl_image",
+        "comms_platform.web.app._generate_tti_image",
         return_value={
             "ok": True,
-            "output_file": "output/sdxl_test.png",
-            "latest_file": "output/sdxl_latest.png",
+            "output_file": "output/tti_test.png",
+            "latest_file": "output/tti_latest.png",
         },
     ), __import__("fastapi.testclient", fromlist=["TestClient"]).TestClient(app) as client:
         response = client.post(

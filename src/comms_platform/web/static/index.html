@@ -113,7 +113,7 @@
               <div class="widget-media-cards">
                 <section class="widget-media-card" aria-label="Image media card">
                   <div class="widget-media-image-wrap" aria-label="Latest image preview">
-                    <img id="media-image" class="widget-media-image" alt="Latest SDXL image" />
+                    <img id="media-image" class="widget-media-image" alt="Latest TTI image" />
                   </div>
                   <div id="media-image-path" class="widget-media-path">Path: not available</div>
                   <button id="btn-media-open-image" class="agent-btn settings-btn" type="button">Open Image</button>
@@ -139,25 +139,36 @@
                   SuperTonic 3: <span id="inference-status" class="agent-status-off">OFFLINE</span>
                 </div>
                 <div class="widget-settings-status widget-inference-status">
-                  <span id="sdxl-dot" class="dot disconnected"></span>
-                  SDXL Base 1: <span id="sdxl-status" class="agent-status-off">OFFLINE</span>
+                  <span id="tti-dot" class="dot disconnected"></span>
+                  SDXL Base 1: <span id="tti-status" class="agent-status-off">OFFLINE</span>
                 </div>
               </div>
 
               <div class="td-actions inference-toggles">
                 <button id="btn-inference-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTS OFF</button>
-                <button id="btn-sdxl-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTI OFF</button>
+                <button id="btn-tti-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTI OFF</button>
                 <button id="btn-test-tts" class="agent-btn settings-btn" type="button">Test TTS</button>
                 <button id="btn-test-tti" class="agent-btn settings-btn" type="button">Test TTI</button>
               </div>
             </div>
           </div>
 
-          <!-- Block 07: reserved panel beside inference block. -->
-          <div class="dashboard-block widget-panel widget-block-07" aria-label="Widget block 07">
-            <div class="widget-title">Block 07</div>
+          <!-- Block 07: interval timers for TTS and TTI test renders. -->
+          <div class="dashboard-block widget-panel widget-block-07" aria-label="Widget block 07 timers">
+            <div class="widget-title">Block 07 Timers</div>
             <div class="widget-block-07-body">
-              <div class="widget-settings-status">Reserved</div>
+              <div class="timer-rows">
+                <div class="widget-settings-status widget-timer-label">TTS</div>
+                <div class="td-actions timer-toggles">
+                  <button id="btn-timer-tts-10s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 10s</button>
+                  <button id="btn-timer-tts-20s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 20s</button>
+                </div>
+                <div class="widget-settings-status widget-timer-label">TTI</div>
+                <div class="td-actions timer-toggles">
+                  <button id="btn-timer-tti-10s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 10s</button>
+                  <button id="btn-timer-tti-20s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 20s</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -181,10 +192,9 @@
                 <option value="agent">Agent</option>
                 <option value="stream">Stream</option>
                 <option value="connections">Connections</option>
-                <option value="touchdesigner">TouchDesigner</option>
-                <option value="ollama">Ollama</option>
+                <option value="third_party">Third Party</option>
                 <option value="inference">Inference</option>
-                <option value="ui">UI</option>
+                <option value="timers">Timers</option>
               </select>
             </div>
             <pre id="agent-state-view" class="widget-agent-state-view">{}</pre>

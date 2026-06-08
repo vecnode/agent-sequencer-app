@@ -21,11 +21,15 @@ const btnOpenOllama = document.getElementById('btn-open-ollama');
 const btnInferenceToggle = document.getElementById('btn-inference-toggle');
 const inferenceDot = document.getElementById('inference-dot');
 const inferenceStatus = document.getElementById('inference-status');
-const btnSdxlToggle = document.getElementById('btn-sdxl-toggle');
+const btnTtiToggle = document.getElementById('btn-tti-toggle');
 const btnTestTts = document.getElementById('btn-test-tts');
 const btnTestTti = document.getElementById('btn-test-tti');
-const sdxlDot = document.getElementById('sdxl-dot');
-const sdxlStatus = document.getElementById('sdxl-status');
+const ttiDot = document.getElementById('tti-dot');
+const ttiStatus = document.getElementById('tti-status');
+const btnTimerTts10s = document.getElementById('btn-timer-tts-10s');
+const btnTimerTts20s = document.getElementById('btn-timer-tts-20s');
+const btnTimerTti10s = document.getElementById('btn-timer-tti-10s');
+const btnTimerTti20s = document.getElementById('btn-timer-tti-20s');
 const btnMediaRefresh = document.getElementById('btn-media-refresh');
 const btnMediaOpenImage = document.getElementById('btn-media-open-image');
 const btnMediaOpenAudio = document.getElementById('btn-media-open-audio');
@@ -64,46 +68,57 @@ const agentState = {
 	agent: {
 		is_running: false,
 		last_action: null,
+		stream: {
+			paused: false,
+			message_count: 0,
+			osc_input: '0.0.0.0:7001',
+			osc_output: '127.0.0.1:7000',
+			last_message: null,
+		},
+		connections: {
+			sse_status: 'connected',
+			sse_clients: 1,
+		},
+		inference: {
+			tts: {
+				engine: 'SuperTonic 3',
+				loaded: false,
+				status: 'OFFLINE',
+				last_error: null,
+			},
+			tti: {
+				engine: 'SDXL Base 1',
+				loaded: false,
+				status: 'OFFLINE',
+				last_error: null,
+				last_image_id: null,
+				last_duration_seconds: null,
+			},
+		},
 	},
-	stream: {
-		paused: false,
-		message_count: 0,
-		osc_input: '0.0.0.0:7001',
-		osc_output: '127.0.0.1:7000',
-		last_message: null,
+	third_party: {
+		touchdesigner: {
+			launch_status: 'IDLE',
+			send_status: 'IDLE',
+		},
+		ollama: {
+			status: 'OFFLINE',
+			models_count: 0,
+			selected_model: null,
+		},
+		unreal_engine: {
+			send_status: 'IDLE',
+		},
 	},
-	connections: {
-		sse_status: 'connected',
-		sse_clients: 1,
-	},
-	touchdesigner: {
-		launch_status: 'IDLE',
-		send_status: 'IDLE',
-	},
-	ollama: {
-		status: 'OFFLINE',
-		models_count: 0,
-		selected_model: null,
-	},
-	inference: {
+	timers: {
 		tts: {
-			engine: 'SuperTonic 3',
-			loaded: false,
-			status: 'OFFLINE',
-			last_error: null,
+			interval_10s: { active: false, interval_seconds: 10, last_trigger_at: null, trigger_count: 0 },
+			interval_20s: { active: false, interval_seconds: 20, last_trigger_at: null, trigger_count: 0 },
 		},
-		sdxl: {
-			engine: 'SDXL Base 1',
-			loaded: false,
-			status: 'OFFLINE',
-			last_error: null,
-			last_image_id: null,
-			last_duration_seconds: null,
+		tti: {
+			interval_10s: { active: false, interval_seconds: 10, last_trigger_at: null, trigger_count: 0 },
+			interval_20s: { active: false, interval_seconds: 20, last_trigger_at: null, trigger_count: 0 },
 		},
-	},
-	ui: {
-		theme: 'light',
-		active_tab: 'dashboard',
 	},
 };
 
@@ -114,6 +129,7 @@ let paused  = false;
 let agentRunning = false;
 let latestMediaImageUrl = null;
 let latestMediaAudioUrl = null;
+const timerHandles = {};
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
 const THEME_STORAGE_KEY = 'comms-platform-theme';
@@ -123,7 +139,16 @@ const THEME_STORAGE_KEY = 'comms-platform-theme';
 function renderAgentState() {
 	if (!agentStateView) return;
 	const scope = agentStateSectionSelect ? agentStateSectionSelect.value : 'all';
-	const scopedState = scope === 'all' ? agentState : { [scope]: agentState[scope] };
+	let scopedState;
+	if (scope === 'all') {
+		scopedState = agentState;
+	} else if (scope === 'agent') {
+		scopedState = { agent: agentState.agent };
+	} else if (scope === 'stream' || scope === 'connections' || scope === 'inference') {
+		scopedState = { [scope]: agentState.agent[scope] };
+	} else {
+		scopedState = { [scope]: agentState[scope] };
+	}
 	agentStateView.textContent = JSON.stringify(scopedState, null, 2);
 }
 
@@ -133,7 +158,7 @@ if (agentStateSectionSelect) {
 
 if (ollamaModelSelect) {
 	ollamaModelSelect.addEventListener('change', () => {
-		agentState.ollama.selected_model = ollamaModelSelect.value || null;
+		agentState.third_party.ollama.selected_model = ollamaModelSelect.value || null;
 		renderAgentState();
 	});
 }
@@ -157,7 +182,6 @@ function applyTheme(themeName) {
 	document.documentElement.setAttribute('data-theme', normalizedTheme);
 	document.body.setAttribute('data-theme', normalizedTheme);
 	document.documentElement.style.colorScheme = normalizedTheme;
-	agentState.ui.theme = normalizedTheme;
 	themeCurrentLabel.textContent = normalizedTheme === 'light' ? 'Light' : 'Dark';
 	themeOptions.forEach((option) => {
 		const isActive = option.dataset.theme === normalizedTheme;
@@ -167,7 +191,6 @@ function applyTheme(themeName) {
 	try {
 		localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
 	} catch (_) {}
-	renderAgentState();
 }
 
 // Returns saved theme; defaults to light for first-time users.
@@ -259,14 +282,12 @@ function pushTerminalLine(text, className = '') {
 
 // Tab navigation controller.
 function setActiveTab(tabName) {
-	agentState.ui.active_tab = tabName;
 	tabs.forEach((tab) => {
 		tab.classList.toggle('active', tab.dataset.tab === tabName);
 	});
 	Object.entries(tabPanels).forEach(([key, panel]) => {
 		panel.classList.toggle('active', key === tabName);
 	});
-	renderAgentState();
 }
 
 tabs.forEach((tab) => {
@@ -304,9 +325,9 @@ async function pollStatus() {
 		statClients.textContent = json.sse_clients;
 		statOscIn.textContent = json.osc_input;
 		statOscOut.textContent = json.osc_output;
-		agentState.connections.sse_clients = json.sse_clients;
-		agentState.stream.osc_input = json.osc_input;
-		agentState.stream.osc_output = json.osc_output;
+		agentState.agent.connections.sse_clients = json.sse_clients;
+		agentState.agent.stream.osc_input = json.osc_input;
+		agentState.agent.stream.osc_output = json.osc_output;
 		setAgentUi(Boolean(json.agent_running));
 		renderAgentState();
 	} catch (_) {}
@@ -314,13 +335,13 @@ async function pollStatus() {
 
 // Synchronizes the Agent State panel with latest status endpoints and current UI state.
 async function refreshAgentStatePanel() {
-	agentState.stream.paused = paused;
-	agentState.stream.message_count = count;
-	agentState.connections.sse_status = dot.classList.contains('connected') ? 'connected' : 'reconnecting';
+	agentState.agent.stream.paused = paused;
+	agentState.agent.stream.message_count = count;
+	agentState.agent.connections.sse_status = dot.classList.contains('connected') ? 'connected' : 'reconnecting';
 	await pollStatus();
 	await checkOllamaStatus(true);
 	await syncTtsInferenceStatus(true);
-	await syncSdxlStatus(true);
+	await syncTtiStatus(true);
 	renderAgentState();
 }
 
@@ -363,14 +384,14 @@ function connect() {
 	source.onopen = () => {
 		dot.className       = 'dot connected';
 		connLabel.textContent = 'connected';
-		agentState.connections.sse_status = 'connected';
+		agentState.agent.connections.sse_status = 'connected';
 		renderAgentState();
 	};
 
 	source.onerror = () => {
 		dot.className       = 'dot disconnected';
 		connLabel.textContent = 'reconnecting…';
-		agentState.connections.sse_status = 'reconnecting';
+		agentState.agent.connections.sse_status = 'reconnecting';
 		renderAgentState();
 	};
 
@@ -396,8 +417,8 @@ function connect() {
 		);
 		count++;
 		statCount.textContent = count;
-		agentState.stream.message_count = count;
-		agentState.stream.last_message = {
+		agentState.agent.stream.message_count = count;
+		agentState.agent.stream.last_message = {
 			address: data.address || null,
 			source: data.source || null,
 			protocol: data.protocol || null,
@@ -527,7 +548,7 @@ document.getElementById('btn-clear').addEventListener('click', () => {
 const btnPause = document.getElementById('btn-pause');
 btnPause.addEventListener('click', () => {
 	paused = !paused;
-	agentState.stream.paused = paused;
+	agentState.agent.stream.paused = paused;
 	btnPause.textContent     = paused ? 'resume' : 'pause';
 	btnPause.style.borderColor = paused ? 'var(--accent)' : '';
 	btnPause.style.color       = paused ? 'var(--accent)' : '';
@@ -575,7 +596,7 @@ async function toggleAgent() {
 function setTdLaunchStatus(state, klass) {
 	tdLaunchStatus.textContent = state;
 	tdLaunchStatus.className = klass;
-	agentState.touchdesigner.launch_status = state;
+	agentState.third_party.touchdesigner.launch_status = state;
 	renderAgentState();
 }
 
@@ -632,7 +653,7 @@ async function checkTdProcesses() {
 function setTdSendStatus(state, klass) {
 	tdSendStatus.textContent = state;
 	tdSendStatus.className = klass;
-	agentState.touchdesigner.send_status = state;
+	agentState.third_party.touchdesigner.send_status = state;
 	renderAgentState();
 }
 
@@ -661,6 +682,8 @@ async function sendTdTestData() {
 function setUe5SendStatus(text, cssClass) {
 	const el = document.getElementById('ue5-send-status');
 	if (el) { el.textContent = text; el.className = cssClass; }
+	agentState.third_party.unreal_engine.send_status = text;
+	renderAgentState();
 }
 
 // Sends a message to Unreal Engine via the platform /notify bridge.
@@ -697,8 +720,8 @@ function setOllamaStatus(isUp, modelCount) {
 	if (ollamaModelCount) {
 		ollamaModelCount.textContent = String(modelCount ?? 0);
 	}
-	agentState.ollama.status = isUp ? 'ONLINE' : 'OFFLINE';
-	agentState.ollama.models_count = modelCount ?? 0;
+	agentState.third_party.ollama.status = isUp ? 'ONLINE' : 'OFFLINE';
+	agentState.third_party.ollama.models_count = modelCount ?? 0;
 	renderAgentState();
 }
 
@@ -722,7 +745,7 @@ function populateOllamaModels(models) {
 		option.textContent = String(modelName);
 		ollamaModelSelect.appendChild(option);
 	});
-	agentState.ollama.selected_model = ollamaModelSelect.value || null;
+	agentState.third_party.ollama.selected_model = ollamaModelSelect.value || null;
 	renderAgentState();
 }
 
@@ -773,9 +796,9 @@ function setTtsInferenceStatus(isReady, error = null) {
 		btnInferenceToggle.classList.toggle('agent-btn-off', !isReady);
 		btnInferenceToggle.setAttribute('aria-pressed', String(isReady));
 	}
-	agentState.inference.tts.loaded = isReady;
-	agentState.inference.tts.status = isReady ? 'ONLINE' : 'OFFLINE';
-	agentState.inference.tts.last_error = error;
+	agentState.agent.inference.tts.loaded = isReady;
+	agentState.agent.inference.tts.status = isReady ? 'ONLINE' : 'OFFLINE';
+	agentState.agent.inference.tts.last_error = error;
 	renderAgentState();
 }
 
@@ -809,7 +832,7 @@ async function syncTtsInferenceStatus(silent = false) {
 async function toggleTtsInferenceEngine() {
 	if (!btnInferenceToggle) return;
 	btnInferenceToggle.disabled = true;
-	const shouldEnable = !agentState.inference.tts.loaded;
+	const shouldEnable = !agentState.agent.inference.tts.loaded;
 	const url = shouldEnable ? '/api/tts/engine/on' : '/api/tts/engine/off';
 	pushTerminalLine(
 		shouldEnable ? '[INFERENCE] Loading SuperTonic 3...' : '[INFERENCE] Unloading SuperTonic 3...',
@@ -838,60 +861,60 @@ async function toggleTtsInferenceEngine() {
 	}
 }
 
-function setSdxlStatus(isReady, error = null) {
-	if (sdxlDot) {
-		sdxlDot.className = isReady ? 'dot connected' : 'dot disconnected';
+function setTtiStatus(isReady, error = null) {
+	if (ttiDot) {
+		ttiDot.className = isReady ? 'dot connected' : 'dot disconnected';
 	}
-	if (sdxlStatus) {
-		sdxlStatus.textContent = isReady ? 'ONLINE' : 'OFFLINE';
-		sdxlStatus.className = isReady ? 'agent-status-on' : 'agent-status-off';
+	if (ttiStatus) {
+		ttiStatus.textContent = isReady ? 'ONLINE' : 'OFFLINE';
+		ttiStatus.className = isReady ? 'agent-status-on' : 'agent-status-off';
 	}
-	if (btnSdxlToggle) {
-		btnSdxlToggle.textContent = isReady ? 'TTI ON' : 'TTI OFF';
-		btnSdxlToggle.classList.toggle('agent-btn-on', isReady);
-		btnSdxlToggle.classList.toggle('agent-btn-off', !isReady);
-		btnSdxlToggle.setAttribute('aria-pressed', String(isReady));
+	if (btnTtiToggle) {
+		btnTtiToggle.textContent = isReady ? 'TTI ON' : 'TTI OFF';
+		btnTtiToggle.classList.toggle('agent-btn-on', isReady);
+		btnTtiToggle.classList.toggle('agent-btn-off', !isReady);
+		btnTtiToggle.setAttribute('aria-pressed', String(isReady));
 	}
-	agentState.inference.sdxl.loaded = isReady;
-	agentState.inference.sdxl.status = isReady ? 'ONLINE' : 'OFFLINE';
-	agentState.inference.sdxl.last_error = error;
+	agentState.agent.inference.tti.loaded = isReady;
+	agentState.agent.inference.tti.status = isReady ? 'ONLINE' : 'OFFLINE';
+	agentState.agent.inference.tti.last_error = error;
 	renderAgentState();
 }
 
-async function syncSdxlStatus(silent = false) {
-	if (btnSdxlToggle) {
-		btnSdxlToggle.disabled = true;
+async function syncTtiStatus(silent = false) {
+	if (btnTtiToggle) {
+		btnTtiToggle.disabled = true;
 	}
 	try {
-		const res = await fetch('/api/sdxl/status');
+		const res = await fetch('/api/tti/status');
 		const json = await res.json();
 		const isReady = Boolean(res.ok && json.ok && json.loaded);
-		setSdxlStatus(isReady, json.error || null);
+		setTtiStatus(isReady, json.error || null);
 		if (!silent) {
 			pushTerminalLine(
-				isReady ? '[SDXL] SDXL Base 1 is loaded (ON)' : '[SDXL] SDXL Base 1 is unloaded (OFF)',
+				isReady ? '[TTI] SDXL Base 1 is loaded (ON)' : '[TTI] SDXL Base 1 is unloaded (OFF)',
 				'terminal-log-info'
 			);
 		}
 	} catch (err) {
-		setSdxlStatus(false, String(err));
+		setTtiStatus(false, String(err));
 		if (!silent) {
-			pushTerminalLine(`[SDXL] ERROR reading engine state (${err})`, 'terminal-log-error');
+			pushTerminalLine(`[TTI] ERROR reading engine state (${err})`, 'terminal-log-error');
 		}
 	} finally {
-		if (btnSdxlToggle) {
-			btnSdxlToggle.disabled = false;
+		if (btnTtiToggle) {
+			btnTtiToggle.disabled = false;
 		}
 	}
 }
 
-async function toggleSdxlEngine() {
-	if (!btnSdxlToggle) return;
-	btnSdxlToggle.disabled = true;
-	const shouldEnable = !agentState.inference.sdxl.loaded;
-	const url = shouldEnable ? '/api/sdxl/engine/on' : '/api/sdxl/engine/off';
+async function toggleTtiEngine() {
+	if (!btnTtiToggle) return;
+	btnTtiToggle.disabled = true;
+	const shouldEnable = !agentState.agent.inference.tti.loaded;
+	const url = shouldEnable ? '/api/tti/engine/on' : '/api/tti/engine/off';
 	pushTerminalLine(
-		shouldEnable ? '[SDXL] Loading SDXL Base 1...' : '[SDXL] Unloading SDXL Base 1...',
+		shouldEnable ? '[TTI] Loading SDXL Base 1...' : '[TTI] Unloading SDXL Base 1...',
 		'terminal-log-info'
 	);
 	try {
@@ -899,69 +922,98 @@ async function toggleSdxlEngine() {
 		const json = await res.json();
 		if (!res.ok) {
 			const errorMessage = json.error || `request failed (${res.status})`;
-			setSdxlStatus(false, errorMessage);
-			pushTerminalLine(`[SDXL] ERROR (${errorMessage})`, 'terminal-log-error');
+			setTtiStatus(false, errorMessage);
+			pushTerminalLine(`[TTI] ERROR (${errorMessage})`, 'terminal-log-error');
 			return;
 		}
 		const loaded = Boolean(json.loaded);
-		setSdxlStatus(loaded, null);
+		setTtiStatus(loaded, null);
 		pushTerminalLine(
-			loaded ? '[SDXL] SDXL Base 1 loaded (ON)' : '[SDXL] SDXL Base 1 unloaded (OFF)',
+			loaded ? '[TTI] SDXL Base 1 loaded (ON)' : '[TTI] SDXL Base 1 unloaded (OFF)',
 			'terminal-log-info'
 		);
 	} catch (err) {
-		setSdxlStatus(false, String(err));
-		pushTerminalLine(`[SDXL] ERROR (${err})`, 'terminal-log-error');
+		setTtiStatus(false, String(err));
+		pushTerminalLine(`[TTI] ERROR (${err})`, 'terminal-log-error');
 	} finally {
-		btnSdxlToggle.disabled = false;
+		btnTtiToggle.disabled = false;
 	}
 }
 
-async function testTtsRender() {
-	if (!btnTestTts) return;
-	if (!agentState.inference.tts.loaded) {
-		pushTerminalLine('[TTS] Engine is OFF. Turn SuperTonic 3 ON first.', 'terminal-log-warning');
-		return;
+async function testTtsRender(silent = false) {
+	if (!agentState.agent.inference.tts.loaded) {
+		if (!silent) {
+			pushTerminalLine('[TTS] Engine is OFF. Turn SuperTonic 3 ON first.', 'terminal-log-warning');
+		}
+		return false;
 	}
 
-	btnTestTts.disabled = true;
-	pushTerminalLine('[TTS] Running synthesis: "hello world"...', 'terminal-log-info');
+	if (btnTestTts) {
+		btnTestTts.disabled = true;
+	}
+	if (!silent) {
+		pushTerminalLine('[TTS] Running synthesis: "hello world"...', 'terminal-log-info');
+	}
 	try {
 		const res = await fetch('/api/tts/test', { method: 'POST' });
 		const json = await res.json();
 		if (!res.ok || !json.ok) {
 			throw new Error(json.error || `request failed (${res.status})`);
 		}
-		pushTerminalLine(`[TTS] Render saved: ${json.output_file}`, 'terminal-log-info');
+		if (!silent) {
+			pushTerminalLine(`[TTS] Render saved: ${json.output_file}`, 'terminal-log-info');
+		}
 		await refreshMediaViewer(true);
+		return true;
 	} catch (err) {
-		pushTerminalLine(`[TTS] ERROR render failed (${err})`, 'terminal-log-error');
+		if (!silent) {
+			pushTerminalLine(`[TTS] ERROR render failed (${err})`, 'terminal-log-error');
+		}
+		return false;
 	} finally {
-		btnTestTts.disabled = false;
+		if (btnTestTts) {
+			btnTestTts.disabled = false;
+		}
 	}
 }
 
-async function testTtiRender() {
-	if (!btnTestTti) return;
-	if (!agentState.inference.sdxl.loaded) {
-		pushTerminalLine('[SDXL] Engine is OFF. Turn SDXL Base 1 ON first.', 'terminal-log-warning');
-		return;
+async function testTtiRender(silent = false) {
+	if (!agentState.agent.inference.tti.loaded) {
+		if (!silent) {
+			pushTerminalLine('[TTI] Engine is OFF. Turn SDXL Base 1 ON first.', 'terminal-log-warning');
+		}
+		return false;
 	}
 
-	btnTestTti.disabled = true;
-	pushTerminalLine('[SDXL] Running generation: "a beautiful sunny city with cars"...', 'terminal-log-info');
+	if (btnTestTti) {
+		btnTestTti.disabled = true;
+	}
+	if (!silent) {
+		pushTerminalLine('[TTI] Running generation: "a beautiful sunny city with cars"...', 'terminal-log-info');
+	}
 	try {
-		const res = await fetch('/api/sdxl/test', { method: 'POST' });
+		const res = await fetch('/api/tti/test', { method: 'POST' });
 		const json = await res.json();
 		if (!res.ok || !json.ok) {
 			throw new Error(json.error || `request failed (${res.status})`);
 		}
-		pushTerminalLine(`[SDXL] Render saved: ${json.output_file}`, 'terminal-log-info');
+		agentState.agent.inference.tti.last_image_id = json.image_id || null;
+		agentState.agent.inference.tti.last_duration_seconds = json.duration_seconds ?? null;
+		if (!silent) {
+			pushTerminalLine(`[TTI] Render saved: ${json.output_file}`, 'terminal-log-info');
+		}
 		await refreshMediaViewer(true);
+		renderAgentState();
+		return true;
 	} catch (err) {
-		pushTerminalLine(`[SDXL] ERROR render failed (${err})`, 'terminal-log-error');
+		if (!silent) {
+			pushTerminalLine(`[TTI] ERROR render failed (${err})`, 'terminal-log-error');
+		}
+		return false;
 	} finally {
-		btnTestTti.disabled = false;
+		if (btnTestTti) {
+			btnTestTti.disabled = false;
+		}
 	}
 }
 
@@ -973,9 +1025,9 @@ async function refreshMediaViewer(silent = false) {
 	}
 
 	const stamp = Date.now();
-	const imageUrl = `/api/media/sdxl/latest?t=${stamp}`;
+	const imageUrl = `/api/media/tti/latest?t=${stamp}`;
 	const audioUrl = `/api/media/tts/latest?t=${stamp}`;
-	const imagePathLabel = '/output/sdxl_latest.png';
+	const imagePathLabel = '/output/tti_latest.png';
 	const audioPathLabel = '/output/tts_latest.wav';
 	let imageReady = false;
 	let audioReady = false;
@@ -1048,6 +1100,102 @@ async function refreshMediaViewer(silent = false) {
 	}
 }
 
+// --- Interval Timers (Block 07) --------------------------------------------
+
+const TIMER_CONFIG = {
+	'tts-10s': { engine: 'tts', key: 'interval_10s', intervalSeconds: 10, button: btnTimerTts10s },
+	'tts-20s': { engine: 'tts', key: 'interval_20s', intervalSeconds: 20, button: btnTimerTts20s },
+	'tti-10s': { engine: 'tti', key: 'interval_10s', intervalSeconds: 10, button: btnTimerTti10s },
+	'tti-20s': { engine: 'tti', key: 'interval_20s', intervalSeconds: 20, button: btnTimerTti20s },
+};
+
+function updateTimerButton(timerId, active) {
+	const config = TIMER_CONFIG[timerId];
+	if (!config || !config.button) return;
+	config.button.textContent = active ? `Stop ${config.intervalSeconds}s` : `Every ${config.intervalSeconds}s`;
+	config.button.classList.toggle('agent-btn-on', active);
+	config.button.classList.toggle('agent-btn-off', !active);
+	config.button.setAttribute('aria-pressed', String(active));
+}
+
+function stopTimer(timerId) {
+	if (timerHandles[timerId]) {
+		clearInterval(timerHandles[timerId]);
+		delete timerHandles[timerId];
+	}
+	const config = TIMER_CONFIG[timerId];
+	if (!config) return;
+	const timerState = agentState.timers[config.engine][config.key];
+	timerState.active = false;
+	updateTimerButton(timerId, false);
+	renderAgentState();
+}
+
+function stopTimersForEngine(engine, exceptTimerId = null) {
+	Object.entries(TIMER_CONFIG).forEach(([timerId, config]) => {
+		if (config.engine === engine && timerId !== exceptTimerId) {
+			stopTimer(timerId);
+		}
+	});
+}
+
+async function triggerTimerAction(engine) {
+	if (engine === 'tts') {
+		return testTtsRender(true);
+	}
+	return testTtiRender(true);
+}
+
+function startTimer(timerId) {
+	const config = TIMER_CONFIG[timerId];
+	if (!config) return;
+
+	stopTimersForEngine(config.engine, timerId);
+
+	const timerState = agentState.timers[config.engine][config.key];
+	timerState.active = true;
+	updateTimerButton(timerId, true);
+	renderAgentState();
+
+	pushTerminalLine(
+		`[TIMER] Started ${config.engine.toUpperCase()} every ${config.intervalSeconds}s`,
+		'terminal-log-system'
+	);
+
+	const runTick = async () => {
+		const triggered = await triggerTimerAction(config.engine);
+		if (triggered) {
+			timerState.last_trigger_at = new Date().toISOString();
+			timerState.trigger_count += 1;
+			renderAgentState();
+		}
+	};
+
+	runTick();
+	timerHandles[timerId] = setInterval(runTick, config.intervalSeconds * 1000);
+}
+
+function toggleTimer(timerId) {
+	const config = TIMER_CONFIG[timerId];
+	if (!config) return;
+	const timerState = agentState.timers[config.engine][config.key];
+	if (timerState.active) {
+		stopTimer(timerId);
+		pushTerminalLine(
+			`[TIMER] Stopped ${config.engine.toUpperCase()} every ${config.intervalSeconds}s`,
+			'terminal-log-system'
+		);
+		return;
+	}
+	startTimer(timerId);
+}
+
+Object.keys(TIMER_CONFIG).forEach((timerId) => {
+	const config = TIMER_CONFIG[timerId];
+	if (!config.button) return;
+	config.button.addEventListener('click', () => toggleTimer(timerId));
+});
+
 // --- User Input / Agent Messaging -----------------------------------------
 
 // Sends user message to the backend agent and appends replies to terminal panel.
@@ -1068,7 +1216,7 @@ async function sendUserInputToAgent() {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				text,
-				selected_model: agentState.ollama.selected_model,
+				selected_model: agentState.third_party.ollama.selected_model,
 			}),
 		});
 		const json = await res.json();
@@ -1116,8 +1264,8 @@ if (btnOpenOllama) {
 if (btnInferenceToggle) {
 	btnInferenceToggle.addEventListener('click', toggleTtsInferenceEngine);
 }
-if (btnSdxlToggle) {
-	btnSdxlToggle.addEventListener('click', toggleSdxlEngine);
+if (btnTtiToggle) {
+	btnTtiToggle.addEventListener('click', toggleTtiEngine);
 }
 if (btnTestTts) {
 	btnTestTts.addEventListener('click', testTtsRender);
@@ -1166,5 +1314,5 @@ userInputText.addEventListener('keydown', (e) => {
 
 renderAgentState();
 syncTtsInferenceStatus(true);
-syncSdxlStatus(true);
+syncTtiStatus(true);
 refreshMediaViewer(true);

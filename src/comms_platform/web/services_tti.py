@@ -14,7 +14,7 @@ from PIL import Image
 
 from ..utils.logger import get_logger
 
-logger = get_logger("web.sdxl_service")
+logger = get_logger("web.tti_service")
 warnings.filterwarnings(
     "ignore",
     message=r"`upcast_vae` is deprecated and will be removed in version 1\.0\.0\..*",
@@ -22,14 +22,17 @@ warnings.filterwarnings(
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_SDXL_MODEL_ID = os.getenv("SDXL_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
+_TTI_MODEL_ID = os.getenv(
+    "TTI_MODEL_ID",
+    os.getenv("SDXL_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"),
+)
 
-_sdxl_pipeline: Any | None = None
-_sdxl_engine_lock = threading.RLock()
+_tti_pipeline: Any | None = None
+_tti_engine_lock = threading.RLock()
 
 
-def sanitize_sdxl_image(image_data: Any) -> Image.Image:
-    """Clamp SDXL output to finite RGB pixel values before saving."""
+def sanitize_tti_image(image_data: Any) -> Image.Image:
+    """Clamp TTI output to finite RGB pixel values before saving."""
     array = np.asarray(image_data, dtype=np.float32)
     array = np.nan_to_num(array, nan=0.0, posinf=1.0, neginf=0.0)
     array = np.clip(array, 0.0, 1.0)
@@ -38,11 +41,11 @@ def sanitize_sdxl_image(image_data: Any) -> Image.Image:
     if array.ndim == 3 and array.shape[-1] > 3:
         array = array[..., :3]
     if array.ndim != 3 or array.shape[-1] != 3:
-        raise ValueError(f"Unexpected SDXL image shape: {array.shape}")
+        raise ValueError(f"Unexpected TTI image shape: {array.shape}")
     return Image.fromarray((array * 255.0).round().astype(np.uint8), mode="RGB")
 
 
-def get_sdxl_runtime() -> tuple[Any, str, Any, str | None]:
+def get_tti_runtime() -> tuple[Any, str, Any, str | None]:
     import torch
 
     fallback_reason: str | None = None
@@ -75,61 +78,61 @@ def release_cuda_cache() -> None:
         pass
 
 
-def get_sdxl_pipeline() -> Any:
-    global _sdxl_pipeline
-    with _sdxl_engine_lock:
-        if _sdxl_pipeline is None:
+def get_tti_pipeline() -> Any:
+    global _tti_pipeline
+    with _tti_engine_lock:
+        if _tti_pipeline is None:
             xformers_logger = logging.getLogger("xformers")
             previous_xformers_level = xformers_logger.level
             xformers_logger.setLevel(logging.ERROR)
             try:
                 from diffusers import DiffusionPipeline
 
-                torch, device, dtype, fallback_reason = get_sdxl_runtime()
+                torch, device, dtype, fallback_reason = get_tti_runtime()
                 logger.info(
-                    "SDXL runtime probe: torch=%s torch_cuda=%s torch_version_cuda=%s",
+                    "TTI runtime probe: torch=%s torch_cuda=%s torch_version_cuda=%s",
                     getattr(torch, "__version__", "unknown"),
                     torch.cuda.is_available(),
                     getattr(getattr(torch, "version", None), "cuda", None),
                 )
                 logger.info("Initializing SDXL Base 1 pipeline on %s (first load may take several minutes).", device)
                 if device == "cpu" and fallback_reason:
-                    logger.warning("SDXL CUDA not active, using CPU (%s)", fallback_reason)
+                    logger.warning("TTI CUDA not active, using CPU (%s)", fallback_reason)
 
-                _sdxl_pipeline = DiffusionPipeline.from_pretrained(_SDXL_MODEL_ID, torch_dtype=dtype)
-                _sdxl_pipeline = _sdxl_pipeline.to(device)
-                _sdxl_pipeline.set_progress_bar_config(disable=True)
+                _tti_pipeline = DiffusionPipeline.from_pretrained(_TTI_MODEL_ID, torch_dtype=dtype)
+                _tti_pipeline = _tti_pipeline.to(device)
+                _tti_pipeline.set_progress_bar_config(disable=True)
 
                 if device == "cuda":
                     try:
-                        _sdxl_pipeline.enable_xformers_memory_efficient_attention()
-                        logger.info("SDXL xFormers attention enabled.")
+                        _tti_pipeline.enable_xformers_memory_efficient_attention()
+                        logger.info("TTI xFormers attention enabled.")
                     except Exception:
-                        logger.info("SDXL xFormers attention unavailable; using default attention.")
+                        logger.info("TTI xFormers attention unavailable; using default attention.")
                     try:
                         import torch
 
-                        _sdxl_pipeline.unet.to(memory_format=torch.channels_last)
+                        _tti_pipeline.unet.to(memory_format=torch.channels_last)
                     except Exception:
                         pass
                 logger.info("SDXL Base 1 pipeline initialized on %s.", device)
             finally:
                 xformers_logger.setLevel(previous_xformers_level)
-        return _sdxl_pipeline
+        return _tti_pipeline
 
 
-def set_sdxl_engine_loaded(loaded: bool) -> dict:
-    global _sdxl_pipeline
-    with _sdxl_engine_lock:
+def set_tti_engine_loaded(loaded: bool) -> dict:
+    global _tti_pipeline
+    with _tti_engine_lock:
         if loaded:
             try:
-                get_sdxl_pipeline()
-                _, device, _, _ = get_sdxl_runtime()
+                get_tti_pipeline()
+                _, device, _, _ = get_tti_runtime()
                 return {
                     "ok": True,
                     "engine": "SDXL Base 1",
                     "loaded": True,
-                    "model_id": _SDXL_MODEL_ID,
+                    "model_id": _TTI_MODEL_ID,
                     "device": device,
                 }
             except Exception as exc:
@@ -137,35 +140,35 @@ def set_sdxl_engine_loaded(loaded: bool) -> dict:
                     "ok": False,
                     "engine": "SDXL Base 1",
                     "loaded": False,
-                    "model_id": _SDXL_MODEL_ID,
+                    "model_id": _TTI_MODEL_ID,
                     "error": str(exc),
                 }
 
-        _sdxl_pipeline = None
+        _tti_pipeline = None
         release_cuda_cache()
-        _, device, _, _ = get_sdxl_runtime()
+        _, device, _, _ = get_tti_runtime()
         return {
             "ok": True,
             "engine": "SDXL Base 1",
             "loaded": False,
-            "model_id": _SDXL_MODEL_ID,
+            "model_id": _TTI_MODEL_ID,
             "device": device,
         }
 
 
-def get_sdxl_engine_loaded_state() -> dict:
-    with _sdxl_engine_lock:
-        _, device, _, _ = get_sdxl_runtime()
+def get_tti_engine_loaded_state() -> dict:
+    with _tti_engine_lock:
+        _, device, _, _ = get_tti_runtime()
         return {
             "ok": True,
             "engine": "SDXL Base 1",
-            "loaded": _sdxl_pipeline is not None,
-            "model_id": _SDXL_MODEL_ID,
+            "loaded": _tti_pipeline is not None,
+            "model_id": _TTI_MODEL_ID,
             "device": device,
         }
 
 
-def generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps: int, seed: int | None) -> dict:
+def generate_tti_image(prompt: str, guidance_scale: float, num_inference_steps: int, seed: int | None) -> dict:
     try:
         prompt = str(prompt or "").strip()
         if not prompt:
@@ -175,13 +178,13 @@ def generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps:
                 "engine": "SDXL Base 1",
             }
 
-        torch, device, _, _ = get_sdxl_runtime()
+        torch, device, _, _ = get_tti_runtime()
         generator = None
         if seed is not None:
             generator = torch.Generator(device=device).manual_seed(int(seed))
 
         started_at = datetime.now(timezone.utc)
-        pipeline = get_sdxl_pipeline()
+        pipeline = get_tti_pipeline()
         with torch.inference_mode():
             image_result = pipeline(
                 prompt=prompt,
@@ -191,14 +194,14 @@ def generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps:
                 output_type="np",
             ).images[0]
 
-        image = sanitize_sdxl_image(image_result)
+        image = sanitize_tti_image(image_result)
         elapsed_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
 
         output_dir = _PROJECT_ROOT / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        output_path = output_dir / f"sdxl_{ts}.png"
-        latest_path = output_dir / "sdxl_latest.png"
+        output_path = output_dir / f"tti_{ts}.png"
+        latest_path = output_dir / "tti_latest.png"
         image.save(output_path, format="PNG")
         image.save(latest_path, format="PNG")
 
@@ -213,7 +216,7 @@ def generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps:
             "ok": True,
             "engine": "SDXL Base 1",
             "loaded": True,
-            "model_id": _SDXL_MODEL_ID,
+            "model_id": _TTI_MODEL_ID,
             "device": device,
             "image_id": str(uuid4()),
             "image_base64": image_base64,
@@ -225,7 +228,7 @@ def generate_sdxl_image(prompt: str, guidance_scale: float, num_inference_steps:
             "seed": seed,
         }
     except Exception as exc:
-        logger.warning("SDXL generation failed: %s", exc)
+        logger.warning("TTI generation failed: %s", exc)
         return {
             "ok": False,
             "engine": "SDXL Base 1",

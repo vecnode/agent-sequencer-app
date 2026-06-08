@@ -19,10 +19,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .schemas import (
     AgentMessagePayload,
-    SdxlGeneratePayload,
     SendToUnrealPayload,
     SignalPayload,
     TdWebPayload,
+    TtiGeneratePayload,
     TtsPayload,
     UnrealEventPayload,
 )
@@ -30,10 +30,10 @@ from .services_ollama import (
     generate_ollama_reply as _generate_ollama_reply,
     open_ollama_application as _open_ollama_application,
 )
-from .services_sdxl import (
-    generate_sdxl_image as _generate_sdxl_image,
-    get_sdxl_engine_loaded_state as _get_sdxl_engine_loaded_state,
-    set_sdxl_engine_loaded as _set_sdxl_engine_loaded,
+from .services_tti import (
+    generate_tti_image as _generate_tti_image,
+    get_tti_engine_loaded_state as _get_tti_engine_loaded_state,
+    set_tti_engine_loaded as _set_tti_engine_loaded,
 )
 from .services_touchdesigner import (
     list_touchdesigner_processes as _list_touchdesigner_processes,
@@ -61,11 +61,12 @@ _OLLAMA_DEFAULT_PORT = int(os.getenv("OLLAMA_PORT", 11434))
 _TTS_DEFAULT_LANG = os.getenv("TTS_DEFAULT_LANG", "en")
 _TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "F1")
 _TTS_PREWARM_ON_STARTUP = os.getenv("TTS_PREWARM_ON_STARTUP", "false").lower() == "true"
-_SDXL_MODEL_ID = os.getenv("SDXL_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0")
-_SDXL_DEFAULT_GUIDANCE = float(os.getenv("SDXL_DEFAULT_GUIDANCE", "7.0"))
-_SDXL_DEFAULT_STEPS = int(os.getenv("SDXL_DEFAULT_STEPS", "20"))
+_TTI_DEFAULT_GUIDANCE = float(
+    os.getenv("TTI_DEFAULT_GUIDANCE", os.getenv("SDXL_DEFAULT_GUIDANCE", "7.0"))
+)
+_TTI_DEFAULT_STEPS = int(os.getenv("TTI_DEFAULT_STEPS", os.getenv("SDXL_DEFAULT_STEPS", "20")))
 _TTS_TEST_PROMPT = "hello world"
-_SDXL_TEST_PROMPT = "a beautiful sunny city with cars"
+_TTI_TEST_PROMPT = "a beautiful sunny city with cars"
 _UNREAL_AUDIO_INTERVAL_SECONDS = float(os.getenv("UNREAL_AUDIO_INTERVAL_SECONDS", "10"))
 _UNREAL_AUDIO_PROMPT = os.getenv(
     "UNREAL_AUDIO_PROMPT",
@@ -219,10 +220,10 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            _generate_sdxl_image,
+            _generate_tti_image,
             _UNREAL_IMAGE_PROMPT,
-            _SDXL_DEFAULT_GUIDANCE,
-            _SDXL_DEFAULT_STEPS,
+            _TTI_DEFAULT_GUIDANCE,
+            _TTI_DEFAULT_STEPS,
             None,
         )
         if result.get("ok"):
@@ -788,32 +789,32 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         result = await loop.run_in_executor(None, _set_tts_engine_loaded, False)
         return result
 
-    @app.get("/api/sdxl/status")
-    async def sdxl_status():
+    @app.get("/api/tti/status")
+    async def tti_status():
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, _get_sdxl_engine_loaded_state)
+        result = await loop.run_in_executor(None, _get_tti_engine_loaded_state)
         return result
 
-    @app.post("/api/sdxl/engine/on")
-    async def sdxl_engine_on():
+    @app.post("/api/tti/engine/on")
+    async def tti_engine_on():
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, _set_sdxl_engine_loaded, True)
+        result = await loop.run_in_executor(None, _set_tti_engine_loaded, True)
         if result.get("ok"):
             return result
         return JSONResponse(status_code=503, content=result)
 
-    @app.post("/api/sdxl/engine/off")
-    async def sdxl_engine_off():
+    @app.post("/api/tti/engine/off")
+    async def tti_engine_off():
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, _set_sdxl_engine_loaded, False)
+        result = await loop.run_in_executor(None, _set_tti_engine_loaded, False)
         return result
 
-    @app.post("/api/sdxl/generate")
-    async def sdxl_generate(payload: SdxlGeneratePayload):
+    @app.post("/api/tti/generate")
+    async def tti_generate(payload: TtiGeneratePayload):
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            _generate_sdxl_image,
+            _generate_tti_image,
             payload.prompt,
             payload.guidance_scale,
             payload.num_inference_steps,
@@ -823,15 +824,15 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             return result
         return JSONResponse(status_code=503, content=result)
 
-    @app.post("/api/sdxl/test")
-    async def sdxl_test_render():
-        state = _get_sdxl_engine_loaded_state()
+    @app.post("/api/tti/test")
+    async def tti_test_render():
+        state = _get_tti_engine_loaded_state()
         if not state.get("loaded"):
             return JSONResponse(
                 status_code=409,
                 content={
                     "ok": False,
-                    "error": "sdxl_engine_not_loaded",
+                    "error": "tti_engine_not_loaded",
                     "engine": "SDXL Base 1",
                 },
             )
@@ -839,22 +840,22 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            _generate_sdxl_image,
-            _SDXL_TEST_PROMPT,
-            _SDXL_DEFAULT_GUIDANCE,
-            _SDXL_DEFAULT_STEPS,
+            _generate_tti_image,
+            _TTI_TEST_PROMPT,
+            _TTI_DEFAULT_GUIDANCE,
+            _TTI_DEFAULT_STEPS,
             None,
         )
         if result.get("ok"):
-            result["prompt"] = _SDXL_TEST_PROMPT
+            result["prompt"] = _TTI_TEST_PROMPT
             return result
         return JSONResponse(status_code=503, content=result)
 
-    @app.get("/api/media/sdxl/latest")
-    async def media_sdxl_latest():
-        latest_path = PROJECT_ROOT / "output" / "sdxl_latest.png"
+    @app.get("/api/media/tti/latest")
+    async def media_tti_latest():
+        latest_path = PROJECT_ROOT / "output" / "tti_latest.png"
         if not latest_path.exists():
-            return JSONResponse(status_code=404, content={"ok": False, "error": "sdxl_latest_not_found"})
+            return JSONResponse(status_code=404, content={"ok": False, "error": "tti_latest_not_found"})
         return FileResponse(latest_path, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/media/tts/latest")
