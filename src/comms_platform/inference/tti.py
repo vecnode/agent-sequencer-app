@@ -14,14 +14,14 @@ from PIL import Image
 
 from ..utils.logger import get_logger
 
-logger = get_logger("web.tti_service")
+logger = get_logger("inference.tti")
 warnings.filterwarnings(
     "ignore",
     message=r"`upcast_vae` is deprecated and will be removed in version 1\.0\.0\..*",
     category=FutureWarning,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+from ..constants import PROJECT_ROOT as _PROJECT_ROOT
 _TTI_MODEL_ID = os.getenv(
     "TTI_MODEL_ID",
     os.getenv("SDXL_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"),

@@ -7,14 +7,14 @@ from api_test_support import build_client, log_test
 def test_touchdesigner_run_example_endpoint():
     with build_client() as client:
         if hasattr(sys.modules["os"], "startfile"):
-            with patch("comms_platform.web.app.os.startfile") as mocked_startfile:
+            with patch("comms_platform.web.routes.third_party.os.startfile") as mocked_startfile:
                 response = client.post("/api/touchdesigner/run-example")
             assert response.status_code == 200
             body = response.json()
             assert body["ok"] is True
             mocked_startfile.assert_called_once()
         else:
-            with patch("comms_platform.web.app.subprocess.Popen") as mocked_popen:
+            with patch("comms_platform.web.routes.third_party.subprocess.Popen") as mocked_popen:
                 response = client.post("/api/touchdesigner/run-example")
             assert response.status_code == 200
             body = response.json()
@@ -46,7 +46,7 @@ def test_touchdesigner_send_test_data_endpoint_success():
             return False
 
     with build_client() as client:
-        with patch("comms_platform.web.app.urlopen", return_value=_StubResponse("ok")) as mocked_urlopen:
+        with patch("comms_platform.integrations.touchdesigner.urlopen", return_value=_StubResponse("ok")) as mocked_urlopen:
             response = client.post("/api/touchdesigner/send-test-data")
 
     assert response.status_code == 200
@@ -63,7 +63,7 @@ def test_touchdesigner_send_test_data_endpoint_success():
 
 def test_touchdesigner_send_test_data_endpoint_connection_error():
     with build_client() as client:
-        with patch("comms_platform.web.app.urlopen", side_effect=Exception("connection refused")):
+        with patch("comms_platform.integrations.touchdesigner.urlopen", side_effect=Exception("connection refused")):
             response = client.post("/api/touchdesigner/send-test-data")
 
     assert response.status_code == 200
@@ -84,7 +84,7 @@ def test_touchdesigner_send_test_data_endpoint_custom_payload():
         def __exit__(self, *_): return False
 
     with build_client() as client:
-        with patch("comms_platform.web.app.urlopen", return_value=_StubResponse()):
+        with patch("comms_platform.integrations.touchdesigner.urlopen", return_value=_StubResponse()):
             response = client.post(
                 "/api/touchdesigner/send-test-data",
                 json={"payload": {"my_key": "my_value"}, "timeout": 3.0},
@@ -111,7 +111,7 @@ def test_touchdesigner_processes_endpoint_reports_running_processes():
         ],
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._list_touchdesigner_processes", return_value=mock_payload):
+        with patch("comms_platform.web.routes.third_party.list_touchdesigner_processes", return_value=mock_payload):
             response = client.get("/api/touchdesigner/processes")
 
     assert response.status_code == 200

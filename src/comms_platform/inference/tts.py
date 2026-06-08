@@ -6,7 +6,7 @@ from typing import Any
 
 from ..utils.logger import get_logger
 
-logger = get_logger("web.tts_service")
+logger = get_logger("inference.tts")
 
 _tts_engine: Any | None = None
 _tts_engine_lock = threading.Lock()

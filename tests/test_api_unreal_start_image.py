@@ -13,7 +13,7 @@ def test_unreal_event_start_image_routes_to_image_generation():
     )
 
     with patch(
-        "comms_platform.web.app._generate_tti_image",
+        "comms_platform.integrations.unreal.generate_tti_image",
         return_value={
             "ok": True,
             "output_file": "output/tti_test.png",

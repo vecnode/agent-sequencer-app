@@ -27,7 +27,7 @@ def test_tti_engine_on_endpoint_success():
         "device": "cpu",
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._set_tti_engine_loaded", return_value=mock_payload):
+        with patch("comms_platform.web.routes.inference.set_tti_engine_loaded", return_value=mock_payload):
             response = client.post("/api/tti/engine/on")
 
     assert response.status_code == 200
@@ -49,7 +49,7 @@ def test_tti_engine_off_endpoint_success():
         "device": "cpu",
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._set_tti_engine_loaded", return_value=mock_payload):
+        with patch("comms_platform.web.routes.inference.set_tti_engine_loaded", return_value=mock_payload):
             response = client.post("/api/tti/engine/off")
 
     assert response.status_code == 200
@@ -72,7 +72,7 @@ def test_tti_generate_endpoint_success():
         "duration_seconds": 1.2,
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._generate_tti_image", return_value=mock_payload):
+        with patch("comms_platform.web.routes.inference.generate_tti_image", return_value=mock_payload):
             response = client.post(
                 "/api/tti/generate",
                 json={
@@ -100,7 +100,7 @@ def test_tti_generate_endpoint_error():
         "error": "pipeline_unavailable",
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._generate_tti_image", return_value=mock_payload):
+        with patch("comms_platform.web.routes.inference.generate_tti_image", return_value=mock_payload):
             response = client.post(
                 "/api/tti/generate",
                 json={
@@ -122,7 +122,7 @@ def test_tti_generate_endpoint_error():
 
 def test_tts_test_endpoint_requires_loaded_engine():
     with build_client() as client:
-        with patch("comms_platform.web.app._get_tts_engine_loaded_state", return_value={"ok": True, "loaded": False}):
+        with patch("comms_platform.web.routes.inference.get_tts_engine_loaded_state", return_value={"ok": True, "loaded": False}):
             response = client.post("/api/tts/test")
 
     assert response.status_code == 409
@@ -144,8 +144,8 @@ def test_tts_test_endpoint_success():
         "lang": "en",
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._get_tts_engine_loaded_state", return_value={"ok": True, "loaded": True}):
-            with patch("comms_platform.web.app._synthesize_tts_audio_bytes", return_value=synth_payload):
+        with patch("comms_platform.web.routes.inference.get_tts_engine_loaded_state", return_value={"ok": True, "loaded": True}):
+            with patch("comms_platform.web.routes.inference.synthesize_tts_audio_bytes", return_value=synth_payload):
                 response = client.post("/api/tts/test")
 
     assert response.status_code == 200
@@ -162,7 +162,7 @@ def test_tts_test_endpoint_success():
 
 def test_tti_test_endpoint_requires_loaded_engine():
     with build_client() as client:
-        with patch("comms_platform.web.app._get_tti_engine_loaded_state", return_value={"ok": True, "loaded": False}):
+        with patch("comms_platform.web.routes.inference.get_tti_engine_loaded_state", return_value={"ok": True, "loaded": False}):
             response = client.post("/api/tti/test")
 
     assert response.status_code == 409
@@ -184,8 +184,8 @@ def test_tti_test_endpoint_success():
         "output_file": "output/tti_test.png",
     }
     with build_client() as client:
-        with patch("comms_platform.web.app._get_tti_engine_loaded_state", return_value={"ok": True, "loaded": True}):
-            with patch("comms_platform.web.app._generate_tti_image", return_value=gen_payload):
+        with patch("comms_platform.web.routes.inference.get_tti_engine_loaded_state", return_value={"ok": True, "loaded": True}):
+            with patch("comms_platform.web.routes.inference.generate_tti_image", return_value=gen_payload):
                 response = client.post("/api/tti/test")
 
     assert response.status_code == 200

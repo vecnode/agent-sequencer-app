@@ -8,8 +8,6 @@ class Config:
     TD_PORT = int(os.getenv("TD_PORT", 7000))
     OSC_INPUT_HOST = os.getenv("OSC_INPUT_HOST", "0.0.0.0")
     OSC_INPUT_PORT = int(os.getenv("OSC_INPUT_PORT", 7001))
-    MODEL_NAME = os.getenv("MODEL_NAME", "feature-extraction")
-    DEVICE = os.getenv("DEVICE", "cuda")
     THREAD_TIMEOUT_SECONDS = float(os.getenv("THREAD_TIMEOUT_SECONDS", 5.0))
     WEB_HOST = os.getenv("WEB_HOST", "127.0.0.1")
     WEB_PORT = int(os.getenv("WEB_PORT", 8000))
@@ -33,3 +31,6 @@ class Config:
     PERCEPTION_UNCERTAIN_THRESHOLD = float(
         os.getenv("PERCEPTION_UNCERTAIN_THRESHOLD", os.getenv("INTENT_UNCERTAIN_THRESHOLD", 0.45))
     )
+
+    MCP_ENABLED = os.getenv("MCP_ENABLED", "true").lower() == "true"
+    MCP_MOUNT_PATH = os.getenv("MCP_MOUNT_PATH", "/mcp")

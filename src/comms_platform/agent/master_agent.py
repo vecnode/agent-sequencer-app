@@ -1,8 +1,8 @@
 import threading
-import time
 
 from .perception_engine import PerceptionDecision, PerceptionEngine
-from .utils.logger import get_logger
+from .tool_registry import ToolRegistry
+from ..utils.logger import get_logger
 
 logger = get_logger("master.agent")
 
@@ -35,6 +35,7 @@ class MasterAgent:
             ),
             enabled=getattr(config, "PERCEPTION_ENGINE_ENABLED", getattr(config, "INTENT_ENGINE_ENABLED", True)),
         )
+        self._tool_registry = ToolRegistry(self)
 
     def start(self) -> bool:
         """Start the agent loop. Returns False when already running."""
@@ -108,7 +109,16 @@ class MasterAgent:
             return "warning: perception model unavailable. ensure Ollama is running and a model is selected."
 
         if decision.route == "tool" and decision.tool_name:
-            self._dispatch_tool(decision.tool_name)
+            result = self._dispatch_tool(decision.tool_name)
+            logger.info(
+                "Master agent routed message: intent=%s route=%s confidence=%.3f tool=%s",
+                decision.intent,
+                decision.route,
+                decision.confidence,
+                decision.tool_name,
+            )
+            if result.ok:
+                return result.message
 
         logger.info(
             "Master agent routed message: intent=%s route=%s confidence=%.3f tool=%s",
@@ -119,20 +129,17 @@ class MasterAgent:
         )
         return "ok."
 
-    def _dispatch_tool(self, tool_name: str) -> None:
-        if tool_name == "agent_start":
-            self.start()
-            return
-        if tool_name == "agent_stop":
-            self.stop()
-            return
-        logger.info("Tool routing skipped unknown tool: %s", tool_name)
+    @property
+    def tool_registry(self) -> ToolRegistry:
+        return self._tool_registry
+
+    def _dispatch_tool(self, tool_name: str):
+        result = self._tool_registry.execute(tool_name)
+        if not result.ok:
+            logger.info("Tool routing skipped unknown tool: %s", tool_name)
+        return result
 
     def _run(self, stop_event: threading.Event) -> None:
         while not stop_event.wait(1.0):
-            # Idle loop intentionally quiet; work is event-driven via incoming instructions.
-            continue
-
-
-# Backward-compatible alias while references are being migrated.
-AgentCoordinator = MasterAgent
+            with self._lock:
+                self._heartbeat_count += 1

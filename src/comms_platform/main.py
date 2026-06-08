@@ -8,11 +8,12 @@ import asyncio
 
 import uvicorn
 
-from .master_agent import MasterAgent
+from .agent import MasterAgent
 from .config import Config
-from .td_sender import TouchDesignerSender
-from .thread_manager import ThreadManager
-from .web.app import EventBus, create_app
+from .transport.event_bus import EventBus
+from .transport.td_sender import TouchDesignerSender
+from .transport.thread_manager import ThreadManager
+from .web.app import create_app
 from .utils.logger import get_logger
 
 logger = get_logger("main")

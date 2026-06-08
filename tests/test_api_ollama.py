@@ -24,7 +24,7 @@ def test_ollama_status_endpoint_success():
 
     mock_json = '{"models": [{"name": "llama3.2:latest"}]}'
     with build_client() as client:
-        with patch("comms_platform.web.app.urlopen", return_value=_StubResponse(mock_json)):
+        with patch("comms_platform.integrations.ollama.urlopen", return_value=_StubResponse(mock_json)):
             response = client.get("/api/ollama/status")
 
     assert response.status_code == 200
@@ -40,7 +40,7 @@ def test_ollama_status_endpoint_success():
 
 def test_ollama_status_endpoint_connection_error():
     with build_client() as client:
-        with patch("comms_platform.web.app.urlopen", side_effect=URLError("connection refused")):
+        with patch("comms_platform.integrations.ollama.urlopen", side_effect=URLError("connection refused")):
             response = client.get("/api/ollama/status")
 
     assert response.status_code == 200

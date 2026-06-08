@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 from ..utils.logger import get_logger
 
-logger = get_logger("web.touchdesigner_service")
+logger = get_logger("integrations.touchdesigner")
 
 
 def post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
@@ -45,35 +45,6 @@ def post_to_td_webserver(url: str, payload: dict, timeout: float) -> dict:
     except Exception as exc:
         logger.exception("Unexpected error posting to TouchDesigner webserver: %s", url)
         return {"ok": False, "target": url, "payload": payload, "error": str(exc)}
-
-
-def play_audio_file(audio_path: Path) -> dict:
-    try:
-        if not audio_path.exists():
-            return {"ok": False, "error": f"audio file not found: {audio_path}"}
-
-        vlc_candidates = [
-            Path(r"C:\Program Files\VideoLAN\VLC\vlc.exe"),
-            Path(r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe"),
-        ]
-        for vlc_path in vlc_candidates:
-            if vlc_path.exists():
-                subprocess.Popen([str(vlc_path), "--play-and-exit", str(audio_path)])
-                return {"ok": True, "player": "vlc", "path": str(audio_path)}
-
-        if hasattr(os, "startfile"):
-            os.startfile(str(audio_path))  # type: ignore[attr-defined]
-            return {"ok": True, "player": "startfile", "path": str(audio_path)}
-
-        if os.name == "posix":
-            opener = "open" if Path("/usr/bin/open").exists() else "xdg-open"
-            subprocess.Popen([opener, str(audio_path)])
-            return {"ok": True, "player": opener, "path": str(audio_path)}
-
-        return {"ok": False, "error": "no audio player available", "path": str(audio_path)}
-    except Exception as exc:
-        logger.exception("Failed to play audio file: %s", audio_path)
-        return {"ok": False, "error": str(exc), "path": str(audio_path)}
 
 
 def list_touchdesigner_processes() -> dict:

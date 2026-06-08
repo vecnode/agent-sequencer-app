@@ -100,11 +100,30 @@ def open_ollama_application() -> dict:
         }
 
 
+CHAT_ASSISTANT_PREFIX = (
+    "You are the communications platform assistant. "
+    "Keep answers concise (at most 6 short sentences). "
+    "Do not describe LLM internals, neural networks, or generic AI capabilities. "
+    "If asked about tools, say the platform exposes agent_start and agent_stop only.\n\n"
+    "User: "
+)
+
+
+def truncate_chat_reply(reply: str, max_chars: int) -> str:
+    clean = reply.strip()
+    if len(clean) <= max_chars:
+        return clean
+    trimmed = clean[: max_chars - 3].rsplit(" ", 1)[0].rstrip()
+    return f"{trimmed}..."
+
+
 def generate_ollama_reply(
     base_url: str,
     prompt: str,
     selected_model: str | None = None,
     timeout: float = 20.0,
+    max_chars: int = 1800,
+    max_tokens: int = 450,
 ) -> dict:
     status = fetch_ollama_status(base_url, timeout=min(timeout, 5.0))
     if not status.get("ok"):
@@ -128,8 +147,11 @@ def generate_ollama_reply(
     generate_url = f"{base_url}/api/generate"
     payload = {
         "model": model_name,
-        "prompt": prompt,
+        "prompt": f"{CHAT_ASSISTANT_PREFIX}{prompt}\nAssistant:",
         "stream": False,
+        "options": {
+            "num_predict": max_tokens,
+        },
     }
     req = Request(
         generate_url,
@@ -140,7 +162,7 @@ def generate_ollama_reply(
     try:
         with urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode("utf-8", errors="replace"))
-            reply = str(body.get("response", "")).strip()
+            reply = truncate_chat_reply(str(body.get("response", "")).strip(), max_chars)
             if not reply:
                 return {
                     "ok": False,

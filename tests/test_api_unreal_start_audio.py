@@ -13,10 +13,10 @@ def test_unreal_event_start_audio_routes_to_audio_loop():
     )
 
     with patch(
-        "comms_platform.web.app._generate_ollama_reply",
+        "comms_platform.integrations.unreal.generate_ollama_reply",
         return_value={"ok": True, "reply": "test narration", "model": "stub-model"},
     ), patch(
-        "comms_platform.web.app._synthesize_tts_audio_bytes",
+        "comms_platform.integrations.unreal.synthesize_tts_audio_bytes",
         return_value={"ok": True, "audio_bytes": b"RIFF", "duration": 0.1, "voice_name": "F1", "lang": "en"},
     ), __import__("fastapi.testclient", fromlist=["TestClient"]).TestClient(app) as client:
         response = client.post(

@@ -3,7 +3,9 @@
 Under active development. 
 
 This repository contains a communications platform of TTS and TTI with a master agent.  
-Interop with Unreal Engine, TouchDesigner, Ollama, Diffusers, XFormers.
+
+Interop: with Unreal Engine, TouchDesigner, Ollama.  
+Contains: Diffusers, XFormers, Instructor.  
 
 - TTS model Supertonic 3
 - TTI model SDXL-Base-1
@@ -14,6 +16,84 @@ Development Guidelines:
 - Coordination is mandatory for critical environments.
 - Expose API and execution timings.
 - Local and field-first architecture
+
+## Package layout
+
+```
+src/comms_platform/
+├── main.py              # entry point
+├── config.py
+├── constants.py         # shared env defaults and paths
+├── agent/               # master agent + perception engine
+├── transport/           # EventBus, OSC gateway, thread manager
+├── integrations/        # Ollama, TouchDesigner, Unreal orchestration
+├── inference/           # TTS and TTI engines
+├── utils/
+├── mcp/                 # MCP server (Streamable HTTP)
+└── web/
+    ├── app.py           # FastAPI factory and lifespan
+    ├── routes/          # HTTP route modules by domain
+    ├── schemas.py
+    └── static/          # dashboard UI (HTTP client)
+```
+
+## MCP control plane
+
+The platform exposes a [Model Context Protocol](https://modelcontextprotocol.io) server alongside the existing REST API. MCP clients (Cursor, Claude Code, MCP Inspector) can start/stop the master agent, send natural-language messages, and read runtime state.
+
+```mermaid
+flowchart LR
+    Browser["Browser UI\n(main.js)"]
+    MCPClient["MCP Clients\n(Cursor, CLI)"]
+    Platform["comms-platform\n(FastAPI + uvicorn)"]
+    Agent["MasterAgent\n(in-process thread)"]
+    Perception["PerceptionEngine\n(Instructor)"]
+    Ollama["Ollama\n(separate LLM server)"]
+
+    Browser -->|"HTTP /api/*"| Platform
+    MCPClient -->|"Streamable HTTP /mcp"| Platform
+    Platform --> Agent
+    Agent --> Perception
+    Perception -->|"Instructor → /v1"| Ollama
+    Platform -->|"chat: /api/generate"| Ollama
+```
+
+### MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `agent_start` | Start the master agent heartbeat loop |
+| `agent_stop` | Stop the master agent heartbeat loop |
+| `agent_status` | Return current agent runtime status |
+| `agent_message` | Natural-language input via perception routing and optional Ollama chat |
+
+### MCP resources
+
+| URI | Description |
+|-----|-------------|
+| `platform://agent/state` | JSON snapshot of agent and connection runtime state |
+| `platform://agent/intent` | JSON snapshot of the latest perception routing decision |
+
+### Connect from Cursor
+
+With the platform running (default `http://127.0.0.1:8000`):
+
+```json
+{
+  "mcpServers": {
+    "communications-platform": {
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_ENABLED` | `true` | Enable MCP Streamable HTTP mount |
+| `MCP_MOUNT_PATH` | `/mcp` | HTTP mount path for the MCP endpoint |
 
 ## Reproduce Windows
 
@@ -115,6 +195,8 @@ Current API endpoints and capabilities:
 - `POST /api/agent/start` — starts agent coordinator
 - `POST /api/agent/stop` — stops agent coordinator
 - `POST /api/agent/message` — sends human text to the agent, appends to history, and returns the current reply plus routing/LLM metadata
+
+- `MCP /mcp` — Streamable HTTP MCP endpoint (tools: `agent_start`, `agent_stop`, `agent_status`, `agent_message`; resources: `platform://agent/state`, `platform://agent/intent`)
 
 - `POST /api/unreal/event` — ingests Unreal events and toggles agent start/stop based on current state
 - `POST /api/platform/send-to-unreal` — sends a message to Unreal `/notify`

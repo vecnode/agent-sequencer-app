@@ -9,7 +9,7 @@ from pythonosc.osc_message_builder import OscMessageBuilder
 from pythonosc.osc_server import ThreadingOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 
-from .utils.logger import get_logger
+from ..utils.logger import get_logger
 
 
 @dataclass
