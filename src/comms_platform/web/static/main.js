@@ -22,21 +22,31 @@ const btnInferenceToggle = document.getElementById('btn-inference-toggle');
 const inferenceDot = document.getElementById('inference-dot');
 const inferenceStatus = document.getElementById('inference-status');
 const btnTtiToggle = document.getElementById('btn-tti-toggle');
+const btnTt3dToggle = document.getElementById('btn-tt3d-toggle');
 const btnTestTts = document.getElementById('btn-test-tts');
 const btnTestTti = document.getElementById('btn-test-tti');
+const btnTestTt3d = document.getElementById('btn-test-tt3d');
 const ttiDot = document.getElementById('tti-dot');
 const ttiStatus = document.getElementById('tti-status');
+const tt3dDot = document.getElementById('tt3d-dot');
+const tt3dStatus = document.getElementById('tt3d-status');
 const btnTimerTts10s = document.getElementById('btn-timer-tts-10s');
 const btnTimerTts20s = document.getElementById('btn-timer-tts-20s');
 const btnTimerTti10s = document.getElementById('btn-timer-tti-10s');
 const btnTimerTti20s = document.getElementById('btn-timer-tti-20s');
+const btnTimerTt3d60s = document.getElementById('btn-timer-tt3d-60s');
+const btnTimerTt3d120s = document.getElementById('btn-timer-tt3d-120s');
 const btnMediaRefresh = document.getElementById('btn-media-refresh');
 const btnMediaOpenImage = document.getElementById('btn-media-open-image');
 const btnMediaOpenAudio = document.getElementById('btn-media-open-audio');
+const btnMediaOpenModel = document.getElementById('btn-media-open-model');
 const mediaImage = document.getElementById('media-image');
 const mediaAudio = document.getElementById('media-audio');
+const mediaModel = document.getElementById('media-model');
+const mediaModelWrap = document.getElementById('media-model-wrap');
 const mediaImagePath = document.getElementById('media-image-path');
 const mediaAudioPath = document.getElementById('media-audio-path');
+const mediaModelPath = document.getElementById('media-model-path');
 const userInputText = document.getElementById('user-input-text');
 const btnUserInputSend = document.getElementById('btn-user-input-send');
 const agentStateSectionSelect = document.getElementById('agent-state-section');
@@ -94,6 +104,16 @@ const agentState = {
 				last_image_id: null,
 				last_duration_seconds: null,
 			},
+			tt3d: {
+				engine: 'Hunyuan3D 2.1',
+				loaded: false,
+				status: 'OFFLINE',
+				mode: 'offline',
+				texture_loaded: false,
+				last_error: null,
+				last_asset_id: null,
+				last_duration_seconds: null,
+			},
 		},
 	},
 	third_party: {
@@ -119,6 +139,10 @@ const agentState = {
 			interval_10s: { active: false, interval_seconds: 10, last_trigger_at: null, trigger_count: 0 },
 			interval_20s: { active: false, interval_seconds: 20, last_trigger_at: null, trigger_count: 0 },
 		},
+		tt3d: {
+			interval_60s: { active: false, interval_seconds: 60, last_trigger_at: null, trigger_count: 0 },
+			interval_120s: { active: false, interval_seconds: 120, last_trigger_at: null, trigger_count: 0 },
+		},
 	},
 };
 
@@ -129,6 +153,7 @@ let paused  = false;
 let agentRunning = false;
 let latestMediaImageUrl = null;
 let latestMediaAudioUrl = null;
+let latestMediaModelUrl = null;
 const timerHandles = {};
 const MAX_ROWS = 200;
 const TERMINAL_MAX_ROWS = 400;
@@ -932,6 +957,9 @@ async function toggleTtiEngine() {
 			loaded ? '[TTI] SDXL Base 1 loaded (ON)' : '[TTI] SDXL Base 1 unloaded (OFF)',
 			'terminal-log-info'
 		);
+		if (loaded && agentState.agent.inference.tt3d.loaded) {
+			await syncTt3dStatus(true);
+		}
 	} catch (err) {
 		setTtiStatus(false, String(err));
 		pushTerminalLine(`[TTI] ERROR (${err})`, 'terminal-log-error');
@@ -1017,6 +1045,157 @@ async function testTtiRender(silent = false) {
 	}
 }
 
+function applyTt3dRuntime(json, isReady) {
+	agentState.agent.inference.tt3d.loaded = isReady;
+	agentState.agent.inference.tt3d.status = isReady ? 'ONLINE' : 'OFFLINE';
+	agentState.agent.inference.tt3d.mode = isReady ? (json.mode || 'shape-only') : 'offline';
+	agentState.agent.inference.tt3d.texture_loaded = Boolean(json.texture_loaded);
+}
+
+function setTt3dStatus(isReady, error = null, json = null) {
+	if (tt3dDot) {
+		tt3dDot.className = isReady ? 'dot connected' : 'dot disconnected';
+	}
+	if (tt3dStatus) {
+		if (!isReady) {
+			tt3dStatus.textContent = 'OFFLINE';
+		} else if (json?.mode === 'shape+texture') {
+			tt3dStatus.textContent = 'ONLINE (shape+texture)';
+		} else {
+			tt3dStatus.textContent = 'ONLINE (shape-only)';
+		}
+		tt3dStatus.className = isReady ? 'agent-status-on' : 'agent-status-off';
+	}
+	if (btnTt3dToggle) {
+		btnTt3dToggle.textContent = isReady ? 'TT3D ON' : 'TT3D OFF';
+		btnTt3dToggle.classList.toggle('agent-btn-on', isReady);
+		btnTt3dToggle.classList.toggle('agent-btn-off', !isReady);
+		btnTt3dToggle.setAttribute('aria-pressed', String(isReady));
+	}
+	applyTt3dRuntime(json || {}, isReady);
+	agentState.agent.inference.tt3d.last_error = error;
+	renderAgentState();
+}
+
+async function syncTt3dStatus(silent = false) {
+	if (btnTt3dToggle) {
+		btnTt3dToggle.disabled = true;
+	}
+	try {
+		const res = await fetch('/api/tt3d/status');
+		const json = await res.json();
+		const isReady = Boolean(res.ok && json.ok && json.loaded);
+		setTt3dStatus(isReady, json.error || null, json);
+		if (!silent) {
+			pushTerminalLine(
+				isReady ? `[TT3D] Hunyuan3D 2.1 is loaded (ON, ${json.mode || 'shape-only'})` : '[TT3D] Hunyuan3D 2.1 is unloaded (OFF)',
+				'terminal-log-info'
+			);
+			if (isReady && json.texture_warning) {
+				pushTerminalLine(`[TT3D] ${json.texture_warning}`, 'terminal-log-warning');
+			}
+		}
+	} catch (err) {
+		setTt3dStatus(false, String(err));
+		if (!silent) {
+			pushTerminalLine(`[TT3D] ERROR reading engine state (${err})`, 'terminal-log-error');
+		}
+	} finally {
+		if (btnTt3dToggle) {
+			btnTt3dToggle.disabled = false;
+		}
+	}
+}
+
+async function toggleTt3dEngine() {
+	if (!btnTt3dToggle) return;
+	btnTt3dToggle.disabled = true;
+	const shouldEnable = !agentState.agent.inference.tt3d.loaded;
+	const url = shouldEnable ? '/api/tt3d/engine/on' : '/api/tt3d/engine/off';
+	pushTerminalLine(
+		shouldEnable ? '[TT3D] Loading Hunyuan3D 2.1...' : '[TT3D] Unloading Hunyuan3D 2.1...',
+		'terminal-log-info'
+	);
+	try {
+		const res = await fetch(url, { method: 'POST' });
+		const json = await res.json();
+		if (!res.ok) {
+			const errorMessage = json.error || `request failed (${res.status})`;
+			setTt3dStatus(false, errorMessage);
+			pushTerminalLine(`[TT3D] ERROR (${errorMessage})`, 'terminal-log-error');
+			if (Array.isArray(json.prerequisites?.issues) && json.prerequisites.issues.length) {
+				pushTerminalLine(`[TT3D] Prerequisites: ${json.prerequisites.issues.join(', ')}`, 'terminal-log-warning');
+			}
+			return;
+		}
+		const loaded = Boolean(json.loaded);
+		setTt3dStatus(loaded, null, json);
+		pushTerminalLine(
+			loaded
+				? `[TT3D] Hunyuan3D 2.1 loaded (ON, ${json.mode || 'shape-only'})`
+				: '[TT3D] Hunyuan3D 2.1 unloaded (OFF)',
+			'terminal-log-info'
+		);
+		if (loaded && json.texture_warning) {
+			pushTerminalLine(`[TT3D] ${json.texture_warning}`, 'terminal-log-warning');
+		}
+		if (loaded && agentState.agent.inference.tti.loaded) {
+			await syncTtiStatus(true);
+		}
+	} catch (err) {
+		setTt3dStatus(false, String(err));
+		pushTerminalLine(`[TT3D] ERROR (${err})`, 'terminal-log-error');
+	} finally {
+		btnTt3dToggle.disabled = false;
+	}
+}
+
+async function testTt3dRender(silent = false) {
+	if (!agentState.agent.inference.tt3d.loaded) {
+		if (!silent) {
+			pushTerminalLine('[TT3D] Engine is OFF. Turn Hunyuan3D 2.1 ON first.', 'terminal-log-warning');
+		}
+		return false;
+	}
+
+	if (btnTestTt3d) {
+		btnTestTt3d.disabled = true;
+	}
+	if (!silent) {
+		pushTerminalLine(
+			'[TT3D] Running generation: "a low-poly wooden chair, studio lighting, plain white background"...',
+			'terminal-log-info'
+		);
+	}
+	try {
+		const res = await fetch('/api/tt3d/test', { method: 'POST' });
+		const json = await res.json();
+		if (!res.ok || !json.ok) {
+			throw new Error(json.error || `request failed (${res.status})`);
+		}
+		agentState.agent.inference.tt3d.last_asset_id = json.asset_id || null;
+		agentState.agent.inference.tt3d.last_duration_seconds = json.duration_seconds ?? null;
+		if (!silent) {
+			pushTerminalLine(`[TT3D] Render saved: ${json.output_file}`, 'terminal-log-info');
+			if (json.texture_warning) {
+				pushTerminalLine(`[TT3D] ${json.texture_warning}`, 'terminal-log-warning');
+			}
+		}
+		await refreshMediaViewer(true);
+		renderAgentState();
+		return true;
+	} catch (err) {
+		if (!silent) {
+			pushTerminalLine(`[TT3D] ERROR render failed (${err})`, 'terminal-log-error');
+		}
+		return false;
+	} finally {
+		if (btnTestTt3d) {
+			btnTestTt3d.disabled = false;
+		}
+	}
+}
+
 async function refreshMediaViewer(silent = false) {
 	if (!mediaImage || !mediaAudio) return;
 
@@ -1027,12 +1206,16 @@ async function refreshMediaViewer(silent = false) {
 	const stamp = Date.now();
 	const imageUrl = `/api/media/tti/latest?t=${stamp}`;
 	const audioUrl = `/api/media/tts/latest?t=${stamp}`;
+	const modelUrl = `/api/media/tt3d/latest?t=${stamp}`;
 	const imagePathLabel = '/output/tti_latest.png';
 	const audioPathLabel = '/output/tts_latest.wav';
+	const modelPathLabel = '/output/tt3d_latest.glb';
 	let imageReady = false;
 	let audioReady = false;
+	let modelReady = false;
 	latestMediaImageUrl = null;
 	latestMediaAudioUrl = null;
+	latestMediaModelUrl = null;
 
 	try {
 		const imageRes = await fetch(imageUrl, { cache: 'no-store' });
@@ -1067,11 +1250,29 @@ async function refreshMediaViewer(silent = false) {
 			}
 		}
 
+		const modelRes = await fetch(modelUrl, { cache: 'no-store' });
+		if (modelRes.ok && mediaModel) {
+			mediaModel.src = modelUrl;
+			latestMediaModelUrl = modelUrl;
+			modelReady = true;
+			if (mediaModelPath) {
+				mediaModelPath.textContent = `Path: ${modelPathLabel}`;
+			}
+		} else if (mediaModel) {
+			mediaModel.removeAttribute('src');
+			if (mediaModelPath) {
+				mediaModelPath.textContent = 'Path: not available';
+			}
+		}
+
 		if (btnMediaOpenImage) {
 			btnMediaOpenImage.disabled = !imageReady;
 		}
 		if (btnMediaOpenAudio) {
 			btnMediaOpenAudio.disabled = !audioReady;
+		}
+		if (btnMediaOpenModel) {
+			btnMediaOpenModel.disabled = !modelReady;
 		}
 
 		if (!silent) {
@@ -1087,11 +1288,17 @@ async function refreshMediaViewer(silent = false) {
 		if (mediaAudioPath) {
 			mediaAudioPath.textContent = 'Path: not available';
 		}
+		if (mediaModelPath) {
+			mediaModelPath.textContent = 'Path: not available';
+		}
 		if (btnMediaOpenImage) {
 			btnMediaOpenImage.disabled = true;
 		}
 		if (btnMediaOpenAudio) {
 			btnMediaOpenAudio.disabled = true;
+		}
+		if (btnMediaOpenModel) {
+			btnMediaOpenModel.disabled = true;
 		}
 	} finally {
 		if (btnMediaRefresh) {
@@ -1107,6 +1314,8 @@ const TIMER_CONFIG = {
 	'tts-20s': { engine: 'tts', key: 'interval_20s', intervalSeconds: 20, button: btnTimerTts20s },
 	'tti-10s': { engine: 'tti', key: 'interval_10s', intervalSeconds: 10, button: btnTimerTti10s },
 	'tti-20s': { engine: 'tti', key: 'interval_20s', intervalSeconds: 20, button: btnTimerTti20s },
+	'tt3d-60s': { engine: 'tt3d', key: 'interval_60s', intervalSeconds: 60, button: btnTimerTt3d60s },
+	'tt3d-120s': { engine: 'tt3d', key: 'interval_120s', intervalSeconds: 120, button: btnTimerTt3d120s },
 };
 
 function updateTimerButton(timerId, active) {
@@ -1142,6 +1351,9 @@ function stopTimersForEngine(engine, exceptTimerId = null) {
 async function triggerTimerAction(engine) {
 	if (engine === 'tts') {
 		return testTtsRender(true);
+	}
+	if (engine === 'tt3d') {
+		return testTt3dRender(true);
 	}
 	return testTtiRender(true);
 }
@@ -1267,11 +1479,17 @@ if (btnInferenceToggle) {
 if (btnTtiToggle) {
 	btnTtiToggle.addEventListener('click', toggleTtiEngine);
 }
+if (btnTt3dToggle) {
+	btnTt3dToggle.addEventListener('click', toggleTt3dEngine);
+}
 if (btnTestTts) {
 	btnTestTts.addEventListener('click', testTtsRender);
 }
 if (btnTestTti) {
 	btnTestTti.addEventListener('click', testTtiRender);
+}
+if (btnTestTt3d) {
+	btnTestTt3d.addEventListener('click', testTt3dRender);
 }
 if (btnMediaRefresh) {
 	btnMediaRefresh.addEventListener('click', () => {
@@ -1291,6 +1509,28 @@ if (btnMediaOpenAudio) {
 		if (!latestMediaAudioUrl) return;
 		window.open(latestMediaAudioUrl, '_blank', 'noopener,noreferrer');
 	});
+}
+if (btnMediaOpenModel) {
+	btnMediaOpenModel.disabled = true;
+	btnMediaOpenModel.addEventListener('click', () => {
+		if (!latestMediaModelUrl) return;
+		window.open(latestMediaModelUrl, '_blank', 'noopener,noreferrer');
+	});
+}
+function openMediaModelInNewTab() {
+	if (!latestMediaModelUrl) return;
+	window.open(latestMediaModelUrl, '_blank', 'noopener,noreferrer');
+}
+if (mediaModelWrap) {
+	mediaModelWrap.addEventListener('click', openMediaModelInNewTab);
+	mediaModelWrap.addEventListener('keydown', (event) => {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			openMediaModelInNewTab();
+		}
+	});
+	mediaModelWrap.setAttribute('role', 'button');
+	mediaModelWrap.setAttribute('tabindex', '0');
 }
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {
@@ -1315,4 +1555,5 @@ userInputText.addEventListener('keydown', (e) => {
 renderAgentState();
 syncTtsInferenceStatus(true);
 syncTtiStatus(true);
+syncTt3dStatus(true);
 refreshMediaViewer(true);

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Comms Platform</title>
   <link rel="stylesheet" href="/static/styles.css" />
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
 </head>
 <body data-theme="light">
 <div class="layout">
@@ -126,6 +127,23 @@
                   <div id="media-audio-path" class="widget-media-path">Path: not available</div>
                   <button id="btn-media-open-audio" class="agent-btn settings-btn" type="button">Open Audio</button>
                 </section>
+
+                <section class="widget-media-card widget-media-card--model" aria-label="3D model media card">
+                  <div id="media-model-wrap" class="widget-media-model-wrap" title="Click to open model in a new tab">
+                    <model-viewer
+                      id="media-model"
+                      class="widget-media-model"
+                      alt="Latest TT3D model"
+                      camera-controls
+                      auto-rotate
+                      shadow-intensity="1"
+                      exposure="1"
+                      interaction-prompt="none"
+                    ></model-viewer>
+                  </div>
+                  <div id="media-model-path" class="widget-media-path">Path: not available</div>
+                  <button id="btn-media-open-model" class="agent-btn settings-btn" type="button">Open Model</button>
+                </section>
               </div>
             </div>
           </div>
@@ -142,18 +160,24 @@
                   <span id="tti-dot" class="dot disconnected"></span>
                   SDXL Base 1: <span id="tti-status" class="agent-status-off">OFFLINE</span>
                 </div>
+                <div class="widget-settings-status widget-inference-status">
+                  <span id="tt3d-dot" class="dot disconnected"></span>
+                  Hunyuan3D 2.1: <span id="tt3d-status" class="agent-status-off">OFFLINE</span>
+                </div>
               </div>
 
               <div class="td-actions inference-toggles">
                 <button id="btn-inference-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTS OFF</button>
                 <button id="btn-tti-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTI OFF</button>
+                <button id="btn-tt3d-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TT3D OFF</button>
                 <button id="btn-test-tts" class="agent-btn settings-btn" type="button">Test TTS</button>
                 <button id="btn-test-tti" class="agent-btn settings-btn" type="button">Test TTI</button>
+                <button id="btn-test-tt3d" class="agent-btn settings-btn" type="button">Test TT3D</button>
               </div>
             </div>
           </div>
 
-          <!-- Block 07: interval timers for TTS and TTI test renders. -->
+          <!-- Block 07: interval timers for TTS, TTI, and TT3D test renders. -->
           <div class="dashboard-block widget-panel widget-block-07" aria-label="Widget block 07 timers">
             <div class="widget-title">Block 07 Timers</div>
             <div class="widget-block-07-body">
@@ -167,6 +191,11 @@
                 <div class="td-actions timer-toggles">
                   <button id="btn-timer-tti-10s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 10s</button>
                   <button id="btn-timer-tti-20s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 20s</button>
+                </div>
+                <div class="widget-settings-status widget-timer-label">TT3D</div>
+                <div class="td-actions timer-toggles">
+                  <button id="btn-timer-tt3d-60s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 60s</button>
+                  <button id="btn-timer-tt3d-120s" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">Every 120s</button>
                 </div>
               </div>
             </div>

@@ -17,6 +17,19 @@ TTI_DEFAULT_GUIDANCE = float(
 TTI_DEFAULT_STEPS = int(os.getenv("TTI_DEFAULT_STEPS", os.getenv("SDXL_DEFAULT_STEPS", "20")))
 TTS_TEST_PROMPT = "hello world"
 TTI_TEST_PROMPT = "a beautiful sunny city with cars"
+TT3D_MODEL_ID = os.getenv("TT3D_MODEL_ID", "tencent/Hunyuan3D-2.1")
+TT3D_SHAPE_SUBFOLDER = os.getenv("TT3D_SHAPE_SUBFOLDER", "hunyuan3d-dit-v2-1")
+TT3D_DEFAULT_GUIDANCE = float(os.getenv("TT3D_DEFAULT_GUIDANCE", "7.5"))
+TT3D_DEFAULT_STEPS = int(os.getenv("TT3D_DEFAULT_STEPS", "30"))
+TT3D_DEFAULT_OCTREE_RESOLUTION = int(os.getenv("TT3D_DEFAULT_OCTREE_RESOLUTION", "256"))
+TT3D_ENABLE_TEXTURE = os.getenv("TT3D_ENABLE_TEXTURE", "true").lower() == "true"
+TT3D_LOW_VRAM = os.getenv("TT3D_LOW_VRAM", "true").lower() == "true"
+TT3D_USE_INTERNAL_TTI = os.getenv("TT3D_USE_INTERNAL_TTI", "true").lower() == "true"
+TT3D_EXCLUSIVE_GPU = os.getenv("TT3D_EXCLUSIVE_GPU", "true").lower() == "true"
+TT3D_TEST_PROMPT = os.getenv(
+    "TT3D_TEST_PROMPT",
+    "a low-poly wooden chair, studio lighting, plain white background",
+)
 UNREAL_AUDIO_INTERVAL_SECONDS = float(os.getenv("UNREAL_AUDIO_INTERVAL_SECONDS", "10"))
 UNREAL_AUDIO_PROMPT = os.getenv(
     "UNREAL_AUDIO_PROMPT",

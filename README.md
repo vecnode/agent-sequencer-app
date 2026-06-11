@@ -2,13 +2,14 @@
 
 Under active development. 
 
-This repository contains a communications platform of TTS and TTI with a master agent.  
+This repository contains a communications platform with TTS, TTI, TT3D, and a master agent.  
 
 Interop: with Unreal Engine, TouchDesigner, Ollama.  
-Contains: Diffusers, XFormers, Instructor.  
+Contains: Diffusers, XFormers, Triton, Instructor.  
 
 - TTS model Supertonic 3
 - TTI model SDXL-Base-1
+- TT3D model [Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1) (text → SDXL → shape → PBR texture → GLB)
 
 Development Guidelines:
 
@@ -27,7 +28,7 @@ src/comms_platform/
 ├── agent/               # master agent + perception engine
 ├── transport/           # EventBus, OSC gateway, thread manager
 ├── integrations/        # Ollama, TouchDesigner, Unreal orchestration
-├── inference/           # TTS and TTI engines
+├── inference/           # TTS, TTI, and TT3D engines
 ├── utils/
 ├── mcp/                 # MCP server (Streamable HTTP)
 └── web/
@@ -149,8 +150,9 @@ uv pip install -r requirements.txt
 <summary>Block 05 - Media Viewer</summary>
 
 - Shows latest generated media artifacts.
-- Left card: TTI thumbnail preview, image path, and Open Image action.
-- Right card: TTS audio player, audio path, and Open Audio action.
+- Image card: TTI thumbnail preview, image path, and Open Image action.
+- Audio card: TTS audio player, audio path, and Open Audio action.
+- Model card: TT3D GLB preview (model-viewer), model path, and Open Model action.
 - Includes Refresh to reload latest media from backend endpoints.
 </details>
 
@@ -160,13 +162,15 @@ uv pip install -r requirements.txt
 - Hosts inference engine controls in a compact control surface.
 - SuperTonic 3: load/unload TTS engine and monitor engine status.
 - SDXL Base 1 (TTI): load/unload image pipeline and run quick generation checks. Uses xFormers attention when available for faster generation.
+- Hunyuan3D 2.1 (TT3D): load/unload 3D pipeline and run one-shot text-to-3D generation. Requires vendor setup (see above).
 </details>
 
 <details>
 <summary>Block 07 - Timers</summary>
 
-- Interval timers for TTS and TTI test renders.
-- Toggle buttons for every 10 seconds and every 20 seconds.
+- Interval timers for TTS, TTI, and TT3D test renders.
+- TTS/TTI: every 10 seconds or every 20 seconds.
+- TT3D: every 60 seconds or every 120 seconds (generation is slower).
 - Timer state is tracked in the agent state `timers` section.
 </details>
 
@@ -216,8 +220,15 @@ Current API endpoints and capabilities:
 - `POST /api/tti/generate` — generates an image from prompt and returns preview payload + output file metadata
 - `POST /api/tti/test` — runs a quick TTI render and stores latest image artifact
 
+- `GET /api/tt3d/status` — reports whether Hunyuan3D 2.1 is loaded and prerequisite checks
+- `POST /api/tt3d/engine/on` — loads Hunyuan3D shape (and paint, when enabled) pipelines
+- `POST /api/tt3d/engine/off` — unloads TT3D pipelines and clears GPU cache
+- `POST /api/tt3d/generate` — one-shot text-to-3D: SDXL reference → shape → optional PBR → GLB
+- `POST /api/tt3d/test` — runs a quick TT3D render with the default test prompt
+
 - `GET /api/media/tti/latest` — serves `output/tti_latest.png` for UI/media viewer
 - `GET /api/media/tts/latest` — serves `output/tts_latest.wav` for UI/media viewer
+- `GET /api/media/tt3d/latest` — serves `output/tt3d_latest.glb` for UI/media viewer
 
 
 

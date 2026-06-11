@@ -12,8 +12,13 @@ from ...constants import (
     TTI_DEFAULT_GUIDANCE,
     TTI_DEFAULT_STEPS,
     TTI_TEST_PROMPT,
+    TT3D_DEFAULT_GUIDANCE,
+    TT3D_DEFAULT_OCTREE_RESOLUTION,
+    TT3D_DEFAULT_STEPS,
+    TT3D_TEST_PROMPT,
 )
 from ...inference.tti import generate_tti_image, get_tti_engine_loaded_state, set_tti_engine_loaded
+from ...inference.tt3d import generate_tt3d_asset, get_tt3d_engine_loaded_state, set_tt3d_engine_loaded
 from ...inference.tts import (
     check_tts_engine_status,
     get_tts_engine_loaded_state,
@@ -22,7 +27,7 @@ from ...inference.tts import (
 )
 from ...utils.logger import get_logger
 from ..context import AppContext
-from ..schemas import TtiGeneratePayload, TtsPayload
+from ..schemas import Tt3dGeneratePayload, TtiGeneratePayload, TtsPayload
 
 logger = get_logger("web.routes.inference")
 
@@ -187,5 +192,71 @@ def register_inference_routes(app, ctx: AppContext) -> None:
         )
         if result.get("ok"):
             result["prompt"] = TTI_TEST_PROMPT
+            return result
+        return JSONResponse(status_code=503, content=result)
+
+    @app.get("/api/tt3d/status")
+    async def tt3d_status():
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, get_tt3d_engine_loaded_state)
+
+    @app.post("/api/tt3d/engine/on")
+    async def tt3d_engine_on():
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, set_tt3d_engine_loaded, True)
+        if result.get("ok"):
+            return result
+        return JSONResponse(status_code=503, content=result)
+
+    @app.post("/api/tt3d/engine/off")
+    async def tt3d_engine_off():
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, set_tt3d_engine_loaded, False)
+
+    @app.post("/api/tt3d/generate")
+    async def tt3d_generate(payload: Tt3dGeneratePayload):
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: generate_tt3d_asset(
+                payload.prompt,
+                payload.guidance_scale,
+                payload.num_inference_steps,
+                payload.seed,
+                enable_texture=payload.enable_texture,
+                octree_resolution=payload.octree_resolution,
+            ),
+        )
+        if result.get("ok"):
+            return result
+        status_code = 409 if result.get("error") == "tt3d_engine_not_loaded" else 503
+        return JSONResponse(status_code=status_code, content=result)
+
+    @app.post("/api/tt3d/test")
+    async def tt3d_test_render():
+        state = get_tt3d_engine_loaded_state()
+        if not state.get("loaded"):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "ok": False,
+                    "error": "tt3d_engine_not_loaded",
+                    "engine": "Hunyuan3D 2.1",
+                },
+            )
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: generate_tt3d_asset(
+                TT3D_TEST_PROMPT,
+                TT3D_DEFAULT_GUIDANCE,
+                TT3D_DEFAULT_STEPS,
+                None,
+                octree_resolution=TT3D_DEFAULT_OCTREE_RESOLUTION,
+            ),
+        )
+        if result.get("ok"):
+            result["prompt"] = TT3D_TEST_PROMPT
             return result
         return JSONResponse(status_code=503, content=result)

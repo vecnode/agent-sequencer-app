@@ -44,6 +44,27 @@ class TtiGeneratePayload(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=4294967295)
 
 
+class Tt3dGeneratePayload(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    guidance_scale: float = Field(
+        default=float(os.getenv("TT3D_DEFAULT_GUIDANCE", "7.5")),
+        ge=1.0,
+        le=20.0,
+    )
+    num_inference_steps: int = Field(
+        default=int(os.getenv("TT3D_DEFAULT_STEPS", "30")),
+        ge=5,
+        le=75,
+    )
+    seed: int | None = Field(default=None, ge=0, le=4294967295)
+    enable_texture: bool | None = None
+    octree_resolution: int = Field(
+        default=int(os.getenv("TT3D_DEFAULT_OCTREE_RESOLUTION", "256")),
+        ge=128,
+        le=512,
+    )
+
+
 class UnrealEventPayload(BaseModel):
     source: str = Field(default="unreal", min_length=1, max_length=64)
     event: str = Field(min_length=1, max_length=128)

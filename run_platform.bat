@@ -27,11 +27,17 @@ if errorlevel 1 (
 	echo [setup] CUDA-enabled PyTorch installed.
 )
 
-uv pip install -e .
+uv pip install -e ".[tt3d]"
 if errorlevel 1 (
 	popd
 	exit /b %errorlevel%
 )
+
+echo [setup] Installing TT3D requirements pin file...
+uv pip install -r requirements-tt3d.txt >nul 2>&1
+
+echo [setup] Applying TT3D runtime patches (if Hunyuan3D vendor is present)...
+uv run python -c "from comms_platform.inference.tt3d import prepare_tt3d_runtime; prepare_tt3d_runtime()" >nul 2>&1
 
 echo [setup] Re-applying CUDA-enabled PyTorch wheel after editable install...
 uv pip install --index-url https://download.pytorch.org/whl/cu124 --upgrade --force-reinstall torch torchvision torchaudio >nul 2>&1
@@ -48,6 +54,16 @@ if errorlevel 1 (
 ) else (
 	echo [setup] xFormers acceleration is active.
 )
+
+echo [setup] Installing Triton for Windows (PyTorch 2.6 / xFormers)...
+uv pip install "triton-windows>=3.2.0.post21,<3.3" >nul 2>&1
+if errorlevel 1 (
+	echo [setup] triton-windows install failed; xFormers may log a Triton warning.
+) else (
+	echo [setup] triton-windows is active.
+)
+
+set HF_HUB_DISABLE_XET=1
 
 set "chrome_exe="
 if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%ProgramFiles%\Google\Chrome\Application\chrome.exe"

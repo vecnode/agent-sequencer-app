@@ -197,3 +197,166 @@ def test_tti_test_endpoint_success():
         "POST /api/tti/test [success]",
         f"status_code={response.status_code}, ok={body['ok']}, image_id={body['image_id']}",
     )
+
+
+def test_tt3d_status_endpoint_reports_unloaded_by_default():
+    with build_client() as client:
+        response = client.get("/api/tt3d/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["engine"] == "Hunyuan3D 2.1"
+    assert "loaded" in body
+    log_test(
+        "GET /api/tt3d/status",
+        f"status_code={response.status_code}, engine={body['engine']}, loaded={body['loaded']}",
+    )
+
+
+def test_tt3d_engine_on_endpoint_success():
+    mock_payload = {
+        "ok": True,
+        "engine": "Hunyuan3D 2.1",
+        "loaded": True,
+        "model_id": "tencent/Hunyuan3D-2.1",
+        "device": "cpu",
+        "texture_enabled": False,
+    }
+    with build_client() as client:
+        with patch("comms_platform.web.routes.inference.set_tt3d_engine_loaded", return_value=mock_payload):
+            response = client.post("/api/tt3d/engine/on")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["loaded"] is True
+    log_test(
+        "POST /api/tt3d/engine/on",
+        f"status_code={response.status_code}, ok={body['ok']}, loaded={body['loaded']}",
+    )
+
+
+def test_tt3d_engine_off_endpoint_success():
+    mock_payload = {
+        "ok": True,
+        "engine": "Hunyuan3D 2.1",
+        "loaded": False,
+        "model_id": "tencent/Hunyuan3D-2.1",
+        "device": "cpu",
+        "texture_enabled": False,
+    }
+    with build_client() as client:
+        with patch("comms_platform.web.routes.inference.set_tt3d_engine_loaded", return_value=mock_payload):
+            response = client.post("/api/tt3d/engine/off")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["loaded"] is False
+    log_test(
+        "POST /api/tt3d/engine/off",
+        f"status_code={response.status_code}, ok={body['ok']}, loaded={body['loaded']}",
+    )
+
+
+def test_tt3d_generate_endpoint_success():
+    mock_payload = {
+        "ok": True,
+        "engine": "Hunyuan3D 2.1",
+        "loaded": True,
+        "asset_id": "mesh123",
+        "output_file": "output/tt3d_test.glb",
+        "duration_seconds": 42.0,
+    }
+    with build_client() as client:
+        with patch("comms_platform.web.routes.inference.generate_tt3d_asset", return_value=mock_payload):
+            response = client.post(
+                "/api/tt3d/generate",
+                json={
+                    "prompt": "a wooden chair on a white background",
+                    "guidance_scale": 7.5,
+                    "num_inference_steps": 30,
+                },
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["asset_id"] == "mesh123"
+    log_test(
+        "POST /api/tt3d/generate [success]",
+        f"status_code={response.status_code}, ok={body['ok']}, asset_id={body['asset_id']}",
+    )
+
+
+def test_tt3d_generate_endpoint_not_loaded():
+    mock_payload = {
+        "ok": False,
+        "engine": "Hunyuan3D 2.1",
+        "error": "tt3d_engine_not_loaded",
+    }
+    with build_client() as client:
+        with patch("comms_platform.web.routes.inference.generate_tt3d_asset", return_value=mock_payload):
+            response = client.post(
+                "/api/tt3d/generate",
+                json={
+                    "prompt": "a wooden chair on a white background",
+                    "guidance_scale": 7.5,
+                    "num_inference_steps": 30,
+                },
+            )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"] == "tt3d_engine_not_loaded"
+    log_test(
+        "POST /api/tt3d/generate [not_loaded]",
+        f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
+    )
+
+
+def test_tt3d_test_endpoint_requires_loaded_engine():
+    with build_client() as client:
+        with patch(
+            "comms_platform.web.routes.inference.get_tt3d_engine_loaded_state",
+            return_value={"ok": True, "loaded": False},
+        ):
+            response = client.post("/api/tt3d/test")
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"] == "tt3d_engine_not_loaded"
+    log_test(
+        "POST /api/tt3d/test [not_loaded]",
+        f"status_code={response.status_code}, ok={body['ok']}, error={body['error']}",
+    )
+
+
+def test_tt3d_test_endpoint_success():
+    gen_payload = {
+        "ok": True,
+        "engine": "Hunyuan3D 2.1",
+        "loaded": True,
+        "asset_id": "test-mesh",
+        "output_file": "output/tt3d_test.glb",
+    }
+    with build_client() as client:
+        with patch(
+            "comms_platform.web.routes.inference.get_tt3d_engine_loaded_state",
+            return_value={"ok": True, "loaded": True},
+        ):
+            with patch("comms_platform.web.routes.inference.generate_tt3d_asset", return_value=gen_payload):
+                response = client.post("/api/tt3d/test")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["asset_id"] == "test-mesh"
+    assert "prompt" in body
+    log_test(
+        "POST /api/tt3d/test [success]",
+        f"status_code={response.status_code}, ok={body['ok']}, asset_id={body['asset_id']}",
+    )
