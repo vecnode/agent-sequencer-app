@@ -6,6 +6,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from ..agent.message_service import process_agent_message
 from ..agent.tool_registry import ToolRegistry
+from ..inference.prompts import get_inference_prompt_state
 from ..utils.logger import get_logger
 from ..web.context import AppContext
 
@@ -17,9 +18,13 @@ Communications platform control plane for the master agent and runtime state.
 Use agent_message for natural-language requests. Perception (Instructor + local Ollama) \
 classifies intent and may start/stop the agent or return a chat reply.
 
+Send `prompt: your text here` via agent_message (or Block 08) to set the shared \
+inference prompt used by Gen TTS, Gen TTI, and Gen TT3D.
+
 Use agent_start and agent_stop for direct lifecycle control without classification.
 
-Read platform://agent/state and platform://agent/intent for live runtime snapshots.\
+Read platform://agent/state, platform://agent/intent, and platform://inference/prompt \
+for live runtime snapshots.\
 """
 
 
@@ -31,6 +36,7 @@ def build_agent_state(ctx: AppContext) -> dict[str, Any]:
         "last_intent": ctx.master_agent.last_intent_decision,
         "sse_clients": ctx.event_bus.subscriber_count,
         "selected_model": ctx.selected_model,
+        "inference_prompt": get_inference_prompt_state(),
     }
 
 
@@ -108,5 +114,10 @@ def create_platform_mcp(ctx: AppContext) -> FastMCP:
         """JSON snapshot of the most recent perception routing decision."""
         intent = ctx.master_agent.last_intent_decision
         return json.dumps(intent or {}, indent=2)
+
+    @mcp.resource("platform://inference/prompt")
+    def inference_prompt_resource() -> str:
+        """JSON snapshot of the shared TTS/TTI/TT3D inference prompt."""
+        return json.dumps(get_inference_prompt_state(), indent=2)
 
     return mcp

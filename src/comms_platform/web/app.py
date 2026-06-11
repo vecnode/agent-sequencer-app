@@ -15,6 +15,7 @@ from ..constants import (
     TTS_PREWARM_ON_STARTUP,
 )
 from ..inference.tts import prewarm_tts_engine
+from ..inference.tt3d import prepare_tt3d_runtime
 from ..integrations.unreal import UnrealOrchestrator
 from ..mcp import create_platform_mcp
 from ..transport.event_bus import EventBus, EventBusLogHandler
@@ -72,8 +73,10 @@ def create_app(event_bus: EventBus, thread_manager, signal_gateway, master_agent
             event_bus.attach_loop(asyncio.get_running_loop())
             logger.info("EventBus attached to asyncio loop.")
 
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, prepare_tt3d_runtime)
+
             if TTS_PREWARM_ON_STARTUP:
-                loop = asyncio.get_running_loop()
                 loop.run_in_executor(None, prewarm_tts_engine)
 
             yield

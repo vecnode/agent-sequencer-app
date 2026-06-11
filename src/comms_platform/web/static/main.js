@@ -42,8 +42,7 @@ const btnMediaOpenAudio = document.getElementById('btn-media-open-audio');
 const btnMediaOpenModel = document.getElementById('btn-media-open-model');
 const mediaImage = document.getElementById('media-image');
 const mediaAudio = document.getElementById('media-audio');
-const mediaModel = document.getElementById('media-model');
-const mediaModelWrap = document.getElementById('media-model-wrap');
+const mediaModelPreview = document.getElementById('media-model-preview');
 const mediaImagePath = document.getElementById('media-image-path');
 const mediaAudioPath = document.getElementById('media-audio-path');
 const mediaModelPath = document.getElementById('media-model-path');
@@ -90,6 +89,7 @@ const agentState = {
 			sse_clients: 1,
 		},
 		inference: {
+			global_prompt: null,
 			tts: {
 				engine: 'SuperTonic 3',
 				loaded: false,
@@ -358,7 +358,25 @@ async function pollStatus() {
 	} catch (_) {}
 }
 
-// Synchronizes the Agent State panel with latest status endpoints and current UI state.
+// Reads the shared TTS/TTI/TT3D inference prompt from the backend.
+async function syncInferencePrompt(silent = true) {
+	try {
+		const res = await fetch('/api/inference/prompt', { cache: 'no-store' });
+		const json = await res.json();
+		if (res.ok && json.ok) {
+			agentState.agent.inference.global_prompt = json.prompt;
+			renderAgentState();
+			if (!silent) {
+				pushTerminalLine(`[INFERENCE] Prompt: ${json.prompt}`, 'terminal-log-info');
+			}
+		}
+	} catch (err) {
+		if (!silent) {
+			pushTerminalLine(`[INFERENCE] ERROR reading prompt (${err})`, 'terminal-log-error');
+		}
+	}
+}
+
 async function refreshAgentStatePanel() {
 	agentState.agent.stream.paused = paused;
 	agentState.agent.stream.message_count = count;
@@ -367,6 +385,7 @@ async function refreshAgentStatePanel() {
 	await checkOllamaStatus(true);
 	await syncTtsInferenceStatus(true);
 	await syncTtiStatus(true);
+	await syncInferencePrompt(true);
 	renderAgentState();
 }
 
@@ -980,7 +999,8 @@ async function testTtsRender(silent = false) {
 		btnTestTts.disabled = true;
 	}
 	if (!silent) {
-		pushTerminalLine('[TTS] Running synthesis: "hello world"...', 'terminal-log-info');
+		const prompt = agentState.agent.inference.global_prompt || '(default)';
+		pushTerminalLine(`[TTS] Generating with prompt: ${prompt}`, 'terminal-log-info');
 	}
 	try {
 		const res = await fetch('/api/tts/test', { method: 'POST' });
@@ -1017,7 +1037,8 @@ async function testTtiRender(silent = false) {
 		btnTestTti.disabled = true;
 	}
 	if (!silent) {
-		pushTerminalLine('[TTI] Running generation: "a beautiful sunny city with cars"...', 'terminal-log-info');
+		const prompt = agentState.agent.inference.global_prompt || '(default)';
+		pushTerminalLine(`[TTI] Generating with prompt: ${prompt}`, 'terminal-log-info');
 	}
 	try {
 		const res = await fetch('/api/tti/test', { method: 'POST' });
@@ -1162,10 +1183,8 @@ async function testTt3dRender(silent = false) {
 		btnTestTt3d.disabled = true;
 	}
 	if (!silent) {
-		pushTerminalLine(
-			'[TT3D] Running generation: "a low-poly wooden chair, studio lighting, plain white background"...',
-			'terminal-log-info'
-		);
+		const prompt = agentState.agent.inference.global_prompt || '(default)';
+		pushTerminalLine(`[TT3D] Generating with prompt: ${prompt}`, 'terminal-log-info');
 	}
 	try {
 		const res = await fetch('/api/tt3d/test', { method: 'POST' });
@@ -1206,10 +1225,12 @@ async function refreshMediaViewer(silent = false) {
 	const stamp = Date.now();
 	const imageUrl = `/api/media/tti/latest?t=${stamp}`;
 	const audioUrl = `/api/media/tts/latest?t=${stamp}`;
-	const modelUrl = `/api/media/tt3d/latest?t=${stamp}`;
+	const modelRefUrl = `/api/media/tt3d/ref/latest?t=${stamp}`;
+	const modelGlbUrl = `/api/media/tt3d/latest?t=${stamp}`;
 	const imagePathLabel = '/output/tti_latest.png';
 	const audioPathLabel = '/output/tts_latest.wav';
-	const modelPathLabel = '/output/tt3d_latest.glb';
+	const modelRefPathLabel = '/output/tt3d_ref_latest.png';
+	const modelGlbPathLabel = '/output/tt3d_latest.glb';
 	let imageReady = false;
 	let audioReady = false;
 	let modelReady = false;
@@ -1250,19 +1271,25 @@ async function refreshMediaViewer(silent = false) {
 			}
 		}
 
-		const modelRes = await fetch(modelUrl, { cache: 'no-store' });
-		if (modelRes.ok && mediaModel) {
-			mediaModel.src = modelUrl;
-			latestMediaModelUrl = modelUrl;
-			modelReady = true;
+		const modelRefRes = await fetch(modelRefUrl, { cache: 'no-store' });
+		if (modelRefRes.ok && mediaModelPreview) {
+			mediaModelPreview.src = modelRefUrl;
 			if (mediaModelPath) {
-				mediaModelPath.textContent = `Path: ${modelPathLabel}`;
+				mediaModelPath.textContent = `Path: ${modelRefPathLabel}`;
 			}
-		} else if (mediaModel) {
-			mediaModel.removeAttribute('src');
+		} else if (mediaModelPreview) {
+			mediaModelPreview.removeAttribute('src');
 			if (mediaModelPath) {
 				mediaModelPath.textContent = 'Path: not available';
 			}
+		}
+
+		const modelGlbRes = await fetch(modelGlbUrl, { method: 'HEAD', cache: 'no-store' });
+		if (modelGlbRes.ok) {
+			latestMediaModelUrl = modelGlbUrl;
+			modelReady = true;
+		} else {
+			latestMediaModelUrl = null;
 		}
 
 		if (btnMediaOpenImage) {
@@ -1436,6 +1463,10 @@ async function sendUserInputToAgent() {
 			terminalFeed.removeChild(waitingRow);
 		}
 		if (res.ok && json.ok) {
+			if (json.inference_prompt?.prompt) {
+				agentState.agent.inference.global_prompt = json.inference_prompt.prompt;
+				renderAgentState();
+			}
 			pushAgentReplyWithListen(json.reply);
 		} else {
 			pushTerminalLine(`[AGENT] ERROR (${json.error || 'request failed'})`, 'terminal-log-error');
@@ -1517,21 +1548,6 @@ if (btnMediaOpenModel) {
 		window.open(latestMediaModelUrl, '_blank', 'noopener,noreferrer');
 	});
 }
-function openMediaModelInNewTab() {
-	if (!latestMediaModelUrl) return;
-	window.open(latestMediaModelUrl, '_blank', 'noopener,noreferrer');
-}
-if (mediaModelWrap) {
-	mediaModelWrap.addEventListener('click', openMediaModelInNewTab);
-	mediaModelWrap.addEventListener('keydown', (event) => {
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			openMediaModelInNewTab();
-		}
-	});
-	mediaModelWrap.setAttribute('role', 'button');
-	mediaModelWrap.setAttribute('tabindex', '0');
-}
 btnUserInputSend.addEventListener('click', sendUserInputToAgent);
 if (btnAgentStateRefresh) {
 	btnAgentStateRefresh.addEventListener('click', async () => {
@@ -1553,6 +1569,7 @@ userInputText.addEventListener('keydown', (e) => {
 // --- Initial Bootstrapping -------------------------------------------------
 
 renderAgentState();
+syncInferencePrompt(true);
 syncTtsInferenceStatus(true);
 syncTtiStatus(true);
 syncTt3dStatus(true);

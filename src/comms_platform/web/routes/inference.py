@@ -8,15 +8,13 @@ from ...constants import (
     PROJECT_ROOT,
     TTS_DEFAULT_LANG,
     TTS_DEFAULT_VOICE,
-    TTS_TEST_PROMPT,
     TTI_DEFAULT_GUIDANCE,
     TTI_DEFAULT_STEPS,
-    TTI_TEST_PROMPT,
     TT3D_DEFAULT_GUIDANCE,
     TT3D_DEFAULT_OCTREE_RESOLUTION,
     TT3D_DEFAULT_STEPS,
-    TT3D_TEST_PROMPT,
 )
+from ...inference.prompts import get_global_inference_prompt, get_inference_prompt_state
 from ...inference.tti import generate_tti_image, get_tti_engine_loaded_state, set_tti_engine_loaded
 from ...inference.tt3d import generate_tt3d_asset, get_tt3d_engine_loaded_state, set_tt3d_engine_loaded
 from ...inference.tts import (
@@ -33,6 +31,10 @@ logger = get_logger("web.routes.inference")
 
 
 def register_inference_routes(app, ctx: AppContext) -> None:
+    @app.get("/api/inference/prompt")
+    async def inference_prompt_get():
+        return {"ok": True, **get_inference_prompt_state()}
+
     @app.post("/api/tts/synthesize")
     async def synthesize_tts(payload: TtsPayload):
         loop = asyncio.get_running_loop()
@@ -84,11 +86,12 @@ def register_inference_routes(app, ctx: AppContext) -> None:
                 },
             )
 
+        prompt = get_global_inference_prompt()
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             synthesize_tts_audio_bytes,
-            TTS_TEST_PROMPT,
+            prompt,
             TTS_DEFAULT_LANG,
             TTS_DEFAULT_VOICE,
         )
@@ -114,7 +117,7 @@ def register_inference_routes(app, ctx: AppContext) -> None:
         return {
             "ok": True,
             "engine": "SuperTonic 3",
-            "prompt": TTS_TEST_PROMPT,
+            "prompt": prompt,
             "duration_seconds": float(result.get("duration", 0.0)),
             "output_file": str(output_path),
             "latest_file": str(latest_path),
@@ -181,17 +184,18 @@ def register_inference_routes(app, ctx: AppContext) -> None:
                 },
             )
 
+        prompt = get_global_inference_prompt()
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             generate_tti_image,
-            TTI_TEST_PROMPT,
+            prompt,
             TTI_DEFAULT_GUIDANCE,
             TTI_DEFAULT_STEPS,
             None,
         )
         if result.get("ok"):
-            result["prompt"] = TTI_TEST_PROMPT
+            result["prompt"] = prompt
             return result
         return JSONResponse(status_code=503, content=result)
 
@@ -245,11 +249,12 @@ def register_inference_routes(app, ctx: AppContext) -> None:
                 },
             )
 
+        prompt = get_global_inference_prompt()
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             lambda: generate_tt3d_asset(
-                TT3D_TEST_PROMPT,
+                prompt,
                 TT3D_DEFAULT_GUIDANCE,
                 TT3D_DEFAULT_STEPS,
                 None,
@@ -257,6 +262,6 @@ def register_inference_routes(app, ctx: AppContext) -> None:
             ),
         )
         if result.get("ok"):
-            result["prompt"] = TT3D_TEST_PROMPT
+            result["prompt"] = prompt
             return result
         return JSONResponse(status_code=503, content=result)

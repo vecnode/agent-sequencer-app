@@ -78,7 +78,7 @@ def _format_missing_deps_error(missing: list[str]) -> str:
     packages = " ".join(missing)
     return (
         f"Missing TT3D Python packages: {', '.join(missing)}. "
-        f"Install with: uv pip install -e \".[tt3d]\" "
+        f"Install with: uv pip install -e . "
         f"or: uv pip install {packages}"
     )
 
@@ -301,6 +301,52 @@ def _configure_hunyuan_paths() -> None:
     _hunyuan_paths_configured = True
 
 
+_CUSTOM_RASTERIZER_HINT = (
+    "Build the Hunyuan custom_rasterizer CUDA extension from the repo root: "
+    ".\\scripts\\setup_hunyuan3d.ps1 "
+    "(requires Visual Studio Build Tools and CUDA 12.4 to match PyTorch cu124)."
+)
+
+
+def _custom_rasterizer_root() -> Path:
+    return _HUNYUAN3D_ROOT / "hy3dpaint" / "custom_rasterizer"
+
+
+def _ensure_custom_rasterizer_path() -> None:
+    _configure_hunyuan_paths()
+    rasterizer_root = _custom_rasterizer_root()
+    if rasterizer_root.is_dir():
+        path = str(rasterizer_root)
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+
+def _verify_custom_rasterizer() -> tuple[bool, str | None]:
+    """Return whether the Hunyuan paint rasterizer CUDA extension is usable."""
+    if not _HUNYUAN3D_ROOT.is_dir():
+        return False, f"Hunyuan3D vendor root not found at {_HUNYUAN3D_ROOT}"
+    if not _custom_rasterizer_root().is_dir():
+        return False, f"custom_rasterizer sources not found at {_custom_rasterizer_root()}"
+
+    try:
+        _ensure_custom_rasterizer_path()
+        with _hunyuan_workdir():
+            import custom_rasterizer
+            import custom_rasterizer_kernel  # noqa: F401
+
+            if not callable(getattr(custom_rasterizer, "rasterize", None)):
+                return False, (
+                    "custom_rasterizer imported but rasterize() is missing; "
+                    f"the CUDA kernel was not built. {_CUSTOM_RASTERIZER_HINT}"
+                )
+        return True, None
+    except Exception as exc:
+        message = str(exc)
+        if "custom_rasterizer" in message:
+            return False, f"{message} {_CUSTOM_RASTERIZER_HINT}"
+        return False, message
+
+
 def check_tt3d_prerequisites() -> dict[str, Any]:
     """Report whether the Hunyuan3D vendor tree and optional native extensions are present."""
     issues: list[str] = []
@@ -324,11 +370,9 @@ def check_tt3d_prerequisites() -> dict[str, Any]:
         if not realesrgan.is_file():
             issues.append("missing_realesrgan_weights")
         try:
-            _configure_hunyuan_paths()
-            with _hunyuan_workdir():
-                import custom_rasterizer  # noqa: F401
-
-            texture_ready = True
+            texture_ready, texture_error = _verify_custom_rasterizer()
+            if not texture_ready and texture_error and TT3D_ENABLE_TEXTURE:
+                issues.append(f"texture_native_extensions:{texture_error}")
         except Exception as exc:
             if TT3D_ENABLE_TEXTURE:
                 issues.append(f"texture_native_extensions:{exc}")
@@ -436,6 +480,10 @@ def get_paint_pipeline() -> Any:
                 )
 
             try:
+                texture_ok, texture_error = _verify_custom_rasterizer()
+                if not texture_ok:
+                    raise RuntimeError(texture_error or "custom_rasterizer_not_built")
+
                 with _hunyuan_workdir():
                     conf = Hunyuan3DPaintConfig(max_num_view=8, resolution=768)
                     conf.realesrgan_ckpt_path = str(realesrgan)
@@ -507,11 +555,19 @@ def set_tt3d_engine_loaded(loaded: bool) -> dict:
             try:
                 get_shape_pipeline()
                 if TT3D_ENABLE_TEXTURE:
-                    try:
-                        get_paint_pipeline()
-                    except Exception as exc:
-                        _last_texture_load_error = str(exc)
-                        logger.warning("TT3D texture pipeline unavailable: %s", exc)
+                    texture_ok, texture_error = _verify_custom_rasterizer()
+                    if not texture_ok:
+                        _last_texture_load_error = texture_error
+                        logger.warning(
+                            "TT3D texture pipeline unavailable: %s",
+                            texture_error or "custom_rasterizer_not_built",
+                        )
+                    else:
+                        try:
+                            get_paint_pipeline()
+                        except Exception as exc:
+                            _last_texture_load_error = str(exc)
+                            logger.warning("TT3D texture pipeline unavailable: %s", exc)
                 _, device, _, _ = get_tt3d_runtime()
                 prereq = check_tt3d_prerequisites()
                 response = {
@@ -714,19 +770,32 @@ def generate_tt3d_asset(
                 _shape_pipeline = None
                 release_cuda_cache()
 
-            with tempfile.TemporaryDirectory(prefix="tt3d_") as tmp_dir:
-                tmp_obj = Path(tmp_dir) / "mesh.obj"
-                mesh.export(str(tmp_obj), file_type="obj")
-                textured_obj = Path(tmp_dir) / "textured_mesh.obj"
-                paint_pipeline = get_paint_pipeline()
-                with _hunyuan_workdir():
-                    paint_pipeline(
-                        mesh_path=str(tmp_obj),
-                        image_path=conditioned,
-                        output_mesh_path=str(textured_obj),
-                        save_glb=False,
-                    )
-                _convert_textured_obj_to_glb(textured_obj, output_path)
+            try:
+                texture_ok, texture_error = _verify_custom_rasterizer()
+                if not texture_ok:
+                    raise RuntimeError(texture_error or "custom_rasterizer_not_built")
+
+                with tempfile.TemporaryDirectory(prefix="tt3d_") as tmp_dir:
+                    tmp_obj = Path(tmp_dir) / "mesh.obj"
+                    mesh.export(str(tmp_obj), file_type="obj")
+                    textured_obj = Path(tmp_dir) / "textured_mesh.obj"
+                    paint_pipeline = get_paint_pipeline()
+                    with _hunyuan_workdir():
+                        paint_pipeline(
+                            mesh_path=str(tmp_obj),
+                            image_path=conditioned,
+                            output_mesh_path=str(textured_obj),
+                            save_glb=False,
+                        )
+                    _convert_textured_obj_to_glb(textured_obj, output_path)
+            except Exception as paint_exc:
+                logger.warning("TT3D texture pass failed (%s); exporting shape-only GLB.", paint_exc)
+                texture_enabled = False
+                texture_warning = (
+                    f"Texture pass failed ({paint_exc}); exported shape-only GLB. "
+                    f"{_CUSTOM_RASTERIZER_HINT}"
+                )
+                _export_mesh_glb(mesh, output_path)
         else:
             _export_mesh_glb(mesh, output_path)
 
@@ -761,3 +830,16 @@ def generate_tt3d_asset(
     except Exception as exc:
         logger.warning("TT3D generation failed: %s", exc)
         return {"ok": False, "engine": _ENGINE_NAME, "error": str(exc)}
+
+
+def prepare_tt3d_runtime() -> None:
+    """Apply Hunyuan3D vendor patches and torchvision/basicsr shims at startup."""
+    if not _HUNYUAN3D_ROOT.is_dir():
+        logger.info("TT3D vendor not found at %s; skipping runtime preparation.", _HUNYUAN3D_ROOT)
+        return
+    try:
+        _patch_hunyuan_mesh_utils_optional_bpy()
+        _apply_tt3d_compat_shims()
+        logger.info("TT3D runtime preparation complete.")
+    except Exception as exc:
+        logger.warning("TT3D runtime preparation failed: %s", exc)

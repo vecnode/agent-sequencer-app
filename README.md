@@ -104,9 +104,125 @@ Requires Python 3.12 on Windows for the CUDA PyTorch wheel set used by SDXL.
 # First time
 uv venv
 uv pip install -r requirements.txt
+uv pip install -e .
 
 .\run_platform.bat
 ```
+
+`run_platform.bat` installs CUDA PyTorch, xFormers, triton-windows, applies Hunyuan3D vendor patches, and starts the platform. One-time Hunyuan3D vendor clone still required:
+
+```powershell
+.\scripts\setup_hunyuan3d.ps1
+```
+
+## TT3D (Hunyuan3D-2.1) setup
+
+TT3D is optional and heavier than TTI/TTS. It chains your existing SDXL pipeline with Tencent's Hunyuan3D-2.1 shape and PBR paint stages to produce a textured GLB from a text prompt.
+
+### Hardware
+
+| Stage | VRAM (approx.) |
+|-------|----------------|
+| SDXL preflight (TTI) | 8–12 GB |
+| Shape generation | 10 GB |
+| PBR texture synthesis | 21 GB |
+| Full pipeline | ~29 GB |
+
+Use `TT3D_LOW_VRAM=true` (default) to unload each stage before loading the next. TTI and TT3D are mutually exclusive on the GPU by default (`TT3D_EXCLUSIVE_GPU=true`).
+
+### One-time vendor install
+
+From the repository root on Windows:
+
+```powershell
+.\scripts\setup_hunyuan3d.ps1
+```
+
+This script:
+
+1. Clones [Tencent-Hunyuan/Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) into `vendor/Hunyuan3D-2.1`
+2. Installs platform dependencies (including TT3D packages such as `trimesh`, `rembg`, etc.)
+3. Builds the `custom_rasterizer` CUDA extension
+4. Downloads Real-ESRGAN weights for the paint pipeline
+
+If texture generation fails after setup, compile the DifferentiableRenderer manually following the upstream README in `vendor/Hunyuan3D-2.1`.
+
+Install dependencies manually:
+
+```sh
+uv pip install -e .
+```
+
+### TT3D environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HUNYUAN3D_ROOT` | `vendor/Hunyuan3D-2.1` | Path to the cloned Hunyuan3D repo |
+| `TT3D_MODEL_ID` | `tencent/Hunyuan3D-2.1` | Hugging Face model ID |
+| `TT3D_SHAPE_SUBFOLDER` | `hunyuan3d-dit-v2-1` | Shape model subfolder |
+| `TT3D_DEFAULT_GUIDANCE` | `7.5` | Classifier-free guidance for shape |
+| `TT3D_DEFAULT_STEPS` | `30` | Diffusion steps for shape |
+| `TT3D_DEFAULT_OCTREE_RESOLUTION` | `256` | Mesh detail level |
+| `TT3D_ENABLE_TEXTURE` | `true` | Run PBR paint stage (disable for shape-only) |
+| `TT3D_LOW_VRAM` | `true` | Unload pipelines between stages |
+| `TT3D_USE_INTERNAL_TTI` | `true` | Generate reference image via SDXL before shape |
+| `TT3D_EXCLUSIVE_GPU` | `true` | Unload TTI when TT3D loads (and vice versa) |
+| `TT3D_TEST_PROMPT` | wooden chair prompt | Default prompt before a global `prompt:` is set |
+
+### Global inference prompt
+
+Send `prompt: your text here` in **Block 08** or via MCP `agent_message` to set the shared prompt used by **Gen TTS**, **Gen TTI**, and **Gen TT3D**. Example:
+
+```
+prompt: a neon cyberpunk city at night
+```
+
+### Expected warnings on Windows
+
+| Message | Severity | Meaning / fix |
+|---------|----------|----------------|
+| `No module named 'triton'` (from xformers) | Fixable | Official `triton` has no Windows wheel. Install **`triton-windows`** (included in `run_platform.bat` and `pyproject.toml` for Windows). Use version `<3.3` with PyTorch 2.6. Not conflicting with PyTorch — it provides the `triton` module xFormers probes for. |
+| `No module named 'bpy'` | Python version gap | **`bpy` cannot be pip-installed on Python 3.12.** PyPI wheels exist only for **Python 3.11** (`bpy==5.0.1`) and **Python 3.13** (`bpy==5.1.2`). This project uses 3.12 for CUDA PyTorch wheels. |
+| `Bpy IO CAN NOT BE Imported` | Usually harmless | Upstream optional import; patched automatically by the platform so the **PBR paint pipeline can load** without bpy. |
+| `InPaint Function CAN NOT BE Imported` | Usually harmless | Optional inpaint helper missing; core paint path still runs. |
+| `custom_rasterizer has no attribute 'rasterize'` or `No module named 'custom_rasterizer_kernel'` | **Must fix for textured output** | The Hunyuan **paint** CUDA extension was not compiled. Run `.\scripts\setup_hunyuan3d.ps1` with **Visual Studio Build Tools** and **CUDA 12.4** installed (must match PyTorch cu124). Until then TT3D can still export **shape-only** GLB. |
+
+**Triton (recommended on Windows):**
+
+```powershell
+uv pip install "triton-windows>=3.2.0.post21,<3.3"
+```
+
+**bpy (not available on Python 3.12 via pip):**
+
+```powershell
+# Will FAIL on Python 3.12:
+uv pip install bpy
+
+# Works only on matching Python versions:
+# Python 3.11 → uv pip install bpy==5.0.1
+# Python 3.13 → uv pip install bpy==5.1.2
+```
+
+Without bpy, the platform patches Hunyuan3D's vendor code so **textured OBJ generation still works**; only Blender-native OBJ→GLB conversion is skipped (trimesh is used instead). Restart the platform after setup so the patch is applied before loading TT3D.
+
+To hide texture attempts entirely: `TT3D_ENABLE_TEXTURE=false`
+
+### TT3D generation flow
+
+```mermaid
+flowchart LR
+    Prompt["Text prompt"] --> TTI["SDXL TTI\n(reference PNG)"]
+    TTI --> RemBG["Background removal"]
+    RemBG --> Shape["Hunyuan3D shape\n(DiT flow matching)"]
+    Shape --> Paint["Hunyuan3D paint\n(PBR textures)"]
+    Paint --> GLB["output/tt3d_latest.glb"]
+```
+
+Outputs are written to `output/`:
+
+- `tt3d_latest.glb` — latest textured (or shape-only) model
+- `tt3d_ref_latest.png` — SDXL reference image used for conditioning
 
 
 ## Blocks
@@ -152,17 +268,14 @@ uv pip install -r requirements.txt
 - Shows latest generated media artifacts.
 - Image card: TTI thumbnail preview, image path, and Open Image action.
 - Audio card: TTS audio player, audio path, and Open Audio action.
-- Model card: TT3D GLB preview (model-viewer), model path, and Open Model action.
+- Model card: TT3D reference PNG preview (same style as TTI), path, and Open Model action (opens GLB in a new tab).
 - Includes Refresh to reload latest media from backend endpoints.
 </details>
 
 <details>
 <summary>Block 06 - Inference</summary>
 
-- Hosts inference engine controls in a compact control surface.
-- SuperTonic 3: load/unload TTS engine and monitor engine status.
-- SDXL Base 1 (TTI): load/unload image pipeline and run quick generation checks. Uses xFormers attention when available for faster generation.
-- Hunyuan3D 2.1 (TT3D): load/unload 3D pipeline and run one-shot text-to-3D generation. Requires vendor setup (see above).
+- SuperTonic 3, SDXL Base 1, and Hunyuan3D 2.1: load/unload each engine and run **Gen TTS**, **Gen TTI**, or **Gen TT3D** using the current global inference prompt.
 </details>
 
 <details>
@@ -177,8 +290,8 @@ uv pip install -r requirements.txt
 <details>
 <summary>Block 08 - User Input</summary>
 
-- Sends text payloads to the backend agent.
-- Creates the main human-to-agent message path.
+- Sends text payloads to the backend agent or MCP.
+- Use `prompt: your text` to set the shared inference prompt for Gen TTS, Gen TTI, and Gen TT3D.
 - Appends the user message and agent reply into the terminal view.
 </details>
 

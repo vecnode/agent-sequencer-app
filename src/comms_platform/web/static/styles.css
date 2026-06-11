@@ -723,10 +723,6 @@ main {
   overflow: hidden;
 }
 
-.widget-media-card--model {
-  grid-template-rows: minmax(0, 1fr) auto auto;
-}
-
 .widget-media-card-title {
   font-size: 11px;
   color: var(--muted);
@@ -754,37 +750,6 @@ main {
 .widget-media-audio {
   width: 100%;
   height: 30px;
-}
-
-.widget-media-model-wrap {
-  position: relative;
-  width: 100%;
-  height: 120px;
-  max-height: 120px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--bg);
-  cursor: pointer;
-  contain: layout paint;
-}
-
-.widget-media-model-wrap:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
-  outline-offset: 2px;
-}
-
-.widget-media-model {
-  display: block;
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  border: none;
-  background: var(--bg);
-  --poster-color: transparent;
 }
 
 .widget-media-path {

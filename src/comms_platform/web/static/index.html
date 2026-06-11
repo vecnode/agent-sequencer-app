@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Comms Platform</title>
   <link rel="stylesheet" href="/static/styles.css" />
-  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
 </head>
 <body data-theme="light">
 <div class="layout">
@@ -128,18 +127,9 @@
                   <button id="btn-media-open-audio" class="agent-btn settings-btn" type="button">Open Audio</button>
                 </section>
 
-                <section class="widget-media-card widget-media-card--model" aria-label="3D model media card">
-                  <div id="media-model-wrap" class="widget-media-model-wrap" title="Click to open model in a new tab">
-                    <model-viewer
-                      id="media-model"
-                      class="widget-media-model"
-                      alt="Latest TT3D model"
-                      camera-controls
-                      auto-rotate
-                      shadow-intensity="1"
-                      exposure="1"
-                      interaction-prompt="none"
-                    ></model-viewer>
+                <section class="widget-media-card" aria-label="3D model media card">
+                  <div class="widget-media-image-wrap" aria-label="Latest TT3D reference preview">
+                    <img id="media-model-preview" class="widget-media-image" alt="Latest TT3D reference" />
                   </div>
                   <div id="media-model-path" class="widget-media-path">Path: not available</div>
                   <button id="btn-media-open-model" class="agent-btn settings-btn" type="button">Open Model</button>
@@ -170,9 +160,9 @@
                 <button id="btn-inference-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTS OFF</button>
                 <button id="btn-tti-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TTI OFF</button>
                 <button id="btn-tt3d-toggle" class="agent-btn agent-btn-off settings-btn" type="button" aria-pressed="false">TT3D OFF</button>
-                <button id="btn-test-tts" class="agent-btn settings-btn" type="button">Test TTS</button>
-                <button id="btn-test-tti" class="agent-btn settings-btn" type="button">Test TTI</button>
-                <button id="btn-test-tt3d" class="agent-btn settings-btn" type="button">Test TT3D</button>
+                <button id="btn-test-tts" class="agent-btn settings-btn" type="button">Gen TTS</button>
+                <button id="btn-test-tti" class="agent-btn settings-btn" type="button">Gen TTI</button>
+                <button id="btn-test-tt3d" class="agent-btn settings-btn" type="button">Gen TT3D</button>
               </div>
             </div>
           </div>
@@ -205,7 +195,7 @@
           <div class="dashboard-block widget-panel widget-user-input" aria-label="Widget user input">
             <div class="widget-title">Block 08 User Input</div>
             <div class="widget-user-input-body">
-              <textarea id="user-input-text" class="widget-input" placeholder="Type your instruction or payload here..."></textarea>
+              <textarea id="user-input-text" class="widget-input" placeholder="Type a message, or set inference prompt: prompt: your text for TTS, TTI, and TT3D"></textarea>
               <button id="btn-user-input-send" class="agent-btn settings-btn" type="button">Send</button>
             </div>
           </div>

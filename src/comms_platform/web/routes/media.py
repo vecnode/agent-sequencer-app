@@ -18,6 +18,13 @@ def register_media_routes(app) -> None:
             return JSONResponse(status_code=404, content={"ok": False, "error": "tts_latest_not_found"})
         return FileResponse(latest_path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/media/tt3d/ref/latest")
+    async def media_tt3d_ref_latest():
+        latest_path = PROJECT_ROOT / "output" / "tt3d_ref_latest.png"
+        if not latest_path.exists():
+            return JSONResponse(status_code=404, content={"ok": False, "error": "tt3d_ref_latest_not_found"})
+        return FileResponse(latest_path, media_type="image/png", headers={"Cache-Control": "no-store"})
+
     @app.get("/api/media/tt3d/latest")
     async def media_tt3d_latest():
         latest_path = PROJECT_ROOT / "output" / "tt3d_latest.glb"
@@ -26,5 +33,9 @@ def register_media_routes(app) -> None:
         return FileResponse(
             latest_path,
             media_type="model/gltf-binary",
-            headers={"Cache-Control": "no-store"},
+            filename="tt3d_latest.glb",
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": 'inline; filename="tt3d_latest.glb"',
+            },
         )

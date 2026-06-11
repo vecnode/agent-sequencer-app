@@ -317,6 +317,21 @@ def test_tt3d_generate_endpoint_not_loaded():
     )
 
 
+def test_inference_prompt_endpoint_returns_state():
+    with build_client() as client:
+        response = client.get("/api/inference/prompt")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "prompt" in body
+    assert body["engines"] == ["tts", "tti", "tt3d"]
+    log_test(
+        "GET /api/inference/prompt",
+        f"status_code={response.status_code}, prompt_len={len(body['prompt'])}",
+    )
+
+
 def test_tt3d_test_endpoint_requires_loaded_engine():
     with build_client() as client:
         with patch(
