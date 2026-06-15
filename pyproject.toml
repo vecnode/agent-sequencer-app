@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ai-comms-platform"
 description = "Headless multimodal inference API with isolated TTS, TTI, and TT3D worker processes"

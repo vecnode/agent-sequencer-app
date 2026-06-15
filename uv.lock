@@ -29,7 +29,7 @@ wheels = [
 [[package]]
 name = "ai-comms-platform"
 version = "0.3.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "accelerate", marker = "sys_platform == 'win32'" },
     { name = "diffusers", marker = "sys_platform == 'win32'" },
