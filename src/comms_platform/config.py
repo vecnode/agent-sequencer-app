@@ -13,3 +13,4 @@ class Config:
     TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "F1")
 
     ENGINES_PRELOAD_ON_STARTUP = os.getenv("ENGINES_PRELOAD_ON_STARTUP", "true").lower() == "true"
+    INFERENCE_IN_PROCESS = os.getenv("INFERENCE_IN_PROCESS", "false").lower() == "true"

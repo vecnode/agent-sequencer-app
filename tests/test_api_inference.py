@@ -27,7 +27,7 @@ def test_tti_engine_on_endpoint_success():
         "device": "cpu",
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.set_tti_engine_loaded", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.set_tti_engine_loaded", return_value=mock_payload):
             response = client.post("/api/tti/engine/on")
 
     assert response.status_code == 200
@@ -49,7 +49,7 @@ def test_tti_engine_off_endpoint_success():
         "device": "cpu",
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.set_tti_engine_loaded", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.set_tti_engine_loaded", return_value=mock_payload):
             response = client.post("/api/tti/engine/off")
 
     assert response.status_code == 200
@@ -72,7 +72,7 @@ def test_tti_generate_endpoint_success():
         "duration_seconds": 1.2,
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.generate_tti_image", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.generate_tti_image", return_value=mock_payload):
             response = client.post(
                 "/api/tti/generate",
                 json={
@@ -100,7 +100,7 @@ def test_tti_generate_endpoint_error():
         "error": "pipeline_unavailable",
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.generate_tti_image", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.generate_tti_image", return_value=mock_payload):
             response = client.post(
                 "/api/tti/generate",
                 json={
@@ -122,7 +122,7 @@ def test_tti_generate_endpoint_error():
 
 def test_tts_test_endpoint_requires_loaded_engine():
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.get_tts_engine_loaded_state", return_value={"ok": True, "loaded": False}):
+        with patch("comms_platform.services.inference_service.get_tts_engine_loaded_state", return_value={"ok": True, "loaded": False}):
             response = client.post("/api/tts/test")
 
     assert response.status_code == 409
@@ -144,8 +144,8 @@ def test_tts_test_endpoint_success():
         "lang": "en",
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.get_tts_engine_loaded_state", return_value={"ok": True, "loaded": True}):
-            with patch("comms_platform.web.routes.inference.synthesize_tts_audio_bytes", return_value=synth_payload):
+        with patch("comms_platform.services.inference_service.get_tts_engine_loaded_state", return_value={"ok": True, "loaded": True}):
+            with patch("comms_platform.services.inference_service.synthesize_tts_audio_bytes", return_value=synth_payload):
                 response = client.post("/api/tts/test")
 
     assert response.status_code == 200
@@ -162,7 +162,7 @@ def test_tts_test_endpoint_success():
 
 def test_tti_test_endpoint_requires_loaded_engine():
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.get_tti_engine_loaded_state", return_value={"ok": True, "loaded": False}):
+        with patch("comms_platform.services.inference_service.get_tti_engine_loaded_state", return_value={"ok": True, "loaded": False}):
             response = client.post("/api/tti/test")
 
     assert response.status_code == 409
@@ -184,8 +184,8 @@ def test_tti_test_endpoint_success():
         "output_file": "output/tti_test.png",
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.get_tti_engine_loaded_state", return_value={"ok": True, "loaded": True}):
-            with patch("comms_platform.web.routes.inference.generate_tti_image", return_value=gen_payload):
+        with patch("comms_platform.services.inference_service.get_tti_engine_loaded_state", return_value={"ok": True, "loaded": True}):
+            with patch("comms_platform.services.inference_service.generate_tti_image", return_value=gen_payload):
                 response = client.post("/api/tti/test")
 
     assert response.status_code == 200
@@ -224,7 +224,7 @@ def test_tt3d_engine_on_endpoint_success():
         "texture_enabled": False,
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.set_tt3d_engine_loaded", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.set_tt3d_engine_loaded", return_value=mock_payload):
             response = client.post("/api/tt3d/engine/on")
 
     assert response.status_code == 200
@@ -247,7 +247,7 @@ def test_tt3d_engine_off_endpoint_success():
         "texture_enabled": False,
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.set_tt3d_engine_loaded", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.set_tt3d_engine_loaded", return_value=mock_payload):
             response = client.post("/api/tt3d/engine/off")
 
     assert response.status_code == 200
@@ -270,7 +270,7 @@ def test_tt3d_generate_endpoint_success():
         "duration_seconds": 42.0,
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.generate_tt3d_asset", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.generate_tt3d_asset", return_value=mock_payload):
             response = client.post(
                 "/api/tt3d/generate",
                 json={
@@ -297,7 +297,7 @@ def test_tt3d_generate_endpoint_not_loaded():
         "error": "tt3d_engine_not_loaded",
     }
     with build_client() as client:
-        with patch("comms_platform.web.routes.inference.generate_tt3d_asset", return_value=mock_payload):
+        with patch("comms_platform.services.inference_service.generate_tt3d_asset", return_value=mock_payload):
             response = client.post(
                 "/api/tt3d/generate",
                 json={
@@ -364,7 +364,7 @@ def test_inference_prompt_post_rejects_empty_prompt():
 def test_tt3d_test_endpoint_requires_loaded_engine():
     with build_client() as client:
         with patch(
-            "comms_platform.web.routes.inference.get_tt3d_engine_loaded_state",
+            "comms_platform.services.inference_service.get_tt3d_engine_loaded_state",
             return_value={"ok": True, "loaded": False},
         ):
             response = client.post("/api/tt3d/test")
@@ -389,10 +389,10 @@ def test_tt3d_test_endpoint_success():
     }
     with build_client() as client:
         with patch(
-            "comms_platform.web.routes.inference.get_tt3d_engine_loaded_state",
+            "comms_platform.services.inference_service.get_tt3d_engine_loaded_state",
             return_value={"ok": True, "loaded": True},
         ):
-            with patch("comms_platform.web.routes.inference.generate_tt3d_asset", return_value=gen_payload):
+            with patch("comms_platform.services.inference_service.generate_tt3d_asset", return_value=gen_payload):
                 response = client.post("/api/tt3d/test")
 
     assert response.status_code == 200

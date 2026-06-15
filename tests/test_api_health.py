@@ -22,12 +22,14 @@ def test_status_endpoint_reports_engine_states():
     body = response.json()
     assert body["status"] == "running"
     assert body["service"] == "inference-api"
+    assert body["architecture"] == "in-process"
     assert "engines" in body
+    assert "gpu_scheduler" in body
     assert "tts" in body["engines"]
     assert "tti" in body["engines"]
     assert "tt3d" in body["engines"]
     log_test(
         "GET /api/status",
         f"status_code={response.status_code}, status={body['status']}, "
-        f"tts_loaded={body['engines']['tts']['loaded']}",
+        f"architecture={body['architecture']}, tts_loaded={body['engines']['tts']['loaded']}",
     )

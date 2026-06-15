@@ -1,108 +1,109 @@
 # ai-comms-platform
 
-Headless **REST inference API** for multimodal generation on Windows. Any client — scripts, game engines, creative tools, mobile apps, or automation pipelines — can connect over HTTP; no bundled UI or host-specific integrations required.
+Headless **REST inference API** for multimodal generation on Windows. Any HTTP client can connect — scripts, game engines, creative tools, or automation pipelines.
 
-- **TTS** — SuperTonic 3
-- **TTI** — SDXL-Base-1
-- **TT3D** — [Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1) (text → SDXL → shape → PBR texture → GLB)
+| Engine | Model | Process |
+|--------|-------|---------|
+| **TTS** | SuperTonic 3 | isolated worker |
+| **TTI** | SDXL-Base-1 | isolated worker |
+| **TT3D** | [Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1) shape-only | isolated worker |
 
-Stack: FastAPI, Diffusers, xFormers, Triton (Windows), PyTorch CUDA.
+Stack: FastAPI gateway, Diffusers, xFormers, Triton (Windows), PyTorch CUDA, reproducible installs via `uv.lock`.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Client["HTTP Clients\n(any app or script)"]
-    Launcher["run_platform.bat"]
-    Main["main.py"]
-    App["create_app\n(FastAPI + uvicorn)"]
-    Routes["web/routes\n(core, inference, media)"]
-    Prompts["inference/prompts.py\n(global prompt state)"]
-    TTS["inference/tts.py\n(SuperTonic 3)"]
-    TTI["inference/tti.py\n(SDXL Base 1)"]
-    TT3D["inference/tt3d.py\n(Hunyuan3D 2.1)"]
-    Output["output/\n(latest artifacts)"]
+    Client["HTTP Clients"]
+    Gateway["API Gateway\n(FastAPI :8000)"]
+    Scheduler["GPU Scheduler\n(serializes TTI + TT3D)"]
+    TTSw["TTS Worker\n(process)"]
+    TTIw["TTI Worker\n(process)"]
+    TT3Dw["TT3D Worker\n(process)"]
+    Output["output/"]
 
-    Launcher --> Main
-    Main --> App
-    Client -->|"HTTP /api/*"| Routes
-    App --> Routes
-    Routes --> Prompts
-    Routes --> TTS
-    Routes --> TTI
-    Routes --> TT3D
-    TTS --> Output
-    TTI --> Output
-    TT3D --> Output
+    Client --> Gateway
+    Gateway --> TTSw
+    Gateway --> Scheduler
+    Scheduler --> TTIw
+    Scheduler --> TT3Dw
+    TTIw -.->|"SDXL preflight"| TT3Dw
+    TTSw --> Output
+    TTIw --> Output
+    TT3Dw --> Output
 ```
 
-The server exposes a stable HTTP surface. Clients poll status, trigger generation, and fetch artifacts from `/api/media/*` — integration is entirely up to the consumer.
+**Gateway** — single FastAPI entry point, public REST surface.
 
-## Package layout
+**Workers** — each engine runs in its own Python subprocess with only its models loaded. The gateway communicates over a line-delimited JSON protocol on stdin/stdout.
 
-```
-src/comms_platform/
-├── main.py              # entry point
-├── config.py            # host/port and startup options
-├── constants.py         # model defaults and output paths
-├── inference/           # TTS, TTI, TT3D engines + startup preload
-├── utils/
-└── web/
-    ├── app.py           # FastAPI factory and lifespan
-    ├── routes/          # HTTP route modules
-    └── schemas.py       # request payloads
-```
+**GPU scheduler** — serializes TTI and TT3D jobs so SDXL and Hunyuan never run on the GPU at the same time, avoiding OOM on a single card. TTS runs independently (lightweight, mostly CPU).
+
+**TT3D is shape-only** — text → SDXL reference image → background removal → Hunyuan shape → GLB via trimesh. No PBR paint, no Blender, no `custom_rasterizer`, no textured GLB pipeline.
 
 ## Quick start (Windows)
 
-Requires Python 3.12 for the CUDA PyTorch wheels used by SDXL.
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```sh
-uv venv
-uv pip install -r requirements.txt
-uv pip install -e .
-
+uv sync --extra gpu --extra tt3d
 .\run_platform.bat
 ```
 
-Default base URL: `http://127.0.0.1:8000`
+Default URL: `http://127.0.0.1:8000`
 
-`run_platform.bat` installs CUDA PyTorch, xFormers, triton-windows, applies Hunyuan3D vendor patches, and starts the API. On startup it preloads **TTS**, **TTI**, and **TT3D** so all three pipelines are ready before the first request.
+`run_platform.bat` runs `uv sync` from `pyproject.toml` + `uv.lock`, then starts the gateway. The gateway spawns three worker subprocesses and waits for them to preload engines when `ENGINES_PRELOAD_ON_STARTUP=true`.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WEB_HOST` | `127.0.0.1` | Bind address |
-| `WEB_PORT` | `8000` | Bind port |
-| `ENGINES_PRELOAD_ON_STARTUP` | `true` | Load all engines at startup |
-| `ENGINES_PRELOAD_ON_STARTUP=false` | — | Skip preload; use `/api/*/engine/on` instead |
+Expected startup log:
 
-One-time Hunyuan3D vendor clone (required for TT3D):
+```
+Inference service running with isolated worker processes.
+Inference worker pool is ready.
+TTS engine preloaded.
+TTI engine preloaded on cuda.
+TT3D engine preloaded on cuda.
+```
+
+### Hunyuan3D vendor (TT3D, one-time)
 
 ```powershell
 .\scripts\setup_hunyuan3d.ps1
 ```
 
+Clones `vendor/Hunyuan3D-2.1` and runs `uv sync`. Only the **hy3dshape** subtree is used.
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEB_HOST` | `127.0.0.1` | Gateway bind address |
+| `WEB_PORT` | `8000` | Gateway bind port |
+| `ENGINES_PRELOAD_ON_STARTUP` | `true` | Each worker loads its engine on start |
+| `INFERENCE_IN_PROCESS` | `false` | `true` = in-process mode, no subprocesses (tests) |
+| `TT3D_USE_INTERNAL_TTI` | `true` | Scheduler runs TTI worker before TT3D for SDXL reference |
+| `HUNYUAN3D_ROOT` | `vendor/Hunyuan3D-2.1` | Hunyuan vendor path |
+| `TT3D_MODEL_ID` | `tencent/Hunyuan3D-2.1` | Hugging Face model ID |
+
 ## Example client flow
 
 ```sh
-# Health check
+# Liveness and runtime state
 curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/status
 
-# Set a shared prompt for test endpoints
+# Shared prompt for /test endpoints
 curl -X POST http://127.0.0.1:8000/api/inference/prompt \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "a neon cyberpunk city at night"}'
+  -d '{"prompt": "a wooden chair on white background"}'
 
-# Generate an image (engine must be loaded)
-curl -X POST http://127.0.0.1:8000/api/tti/generate \
+# Shape-only 3D (scheduler runs TTI preflight, then TT3D shape)
+curl -X POST http://127.0.0.1:8000/api/tt3d/generate \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "a neon cyberpunk city at night"}'
+  -d '{"prompt": "a wooden chair on white background"}'
 
 # Fetch latest artifact
-curl -O http://127.0.0.1:8000/api/media/tti/latest
+curl -O http://127.0.0.1:8000/api/media/tt3d/latest
 ```
-
-Each generate endpoint also accepts its own `text` or `prompt` field directly.
 
 ## API reference
 
@@ -111,7 +112,7 @@ Each generate endpoint also accepts its own `text` or `prompt` field directly.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness check |
-| `GET` | `/api/status` | Runtime status and per-engine loaded state |
+| `GET` | `/api/status` | Engine states, `architecture`, GPU scheduler `pending_jobs` |
 
 ### Inference prompt
 
@@ -125,7 +126,7 @@ Each generate endpoint also accepts its own `text` or `prompt` field directly.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/tts/status` | Engine loaded state |
-| `POST` | `/api/tts/engine/on` | Load engine |
+| `POST` | `/api/tts/engine/on` | Load engine in TTS worker |
 | `POST` | `/api/tts/engine/off` | Unload engine |
 | `POST` | `/api/tts/synthesize` | Synthesize WAV from `text` |
 | `POST` | `/api/tts/test` | Quick render using global prompt |
@@ -135,19 +136,19 @@ Each generate endpoint also accepts its own `text` or `prompt` field directly.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/tti/status` | Engine loaded state |
-| `POST` | `/api/tti/engine/on` | Load pipeline |
+| `POST` | `/api/tti/engine/on` | Load pipeline in TTI worker |
 | `POST` | `/api/tti/engine/off` | Unload pipeline |
 | `POST` | `/api/tti/generate` | Generate image from `prompt` |
 | `POST` | `/api/tti/test` | Quick render using global prompt |
 
-### TT3D (Hunyuan3D 2.1)
+### TT3D (Hunyuan3D 2.1, shape-only)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/tt3d/status` | Engine loaded state and prerequisites |
-| `POST` | `/api/tt3d/engine/on` | Load shape (+ paint when enabled) |
-| `POST` | `/api/tt3d/engine/off` | Unload and clear GPU cache |
-| `POST` | `/api/tt3d/generate` | Full text-to-3D pipeline → GLB |
+| `POST` | `/api/tt3d/engine/on` | Load shape pipeline in TT3D worker |
+| `POST` | `/api/tt3d/engine/off` | Unload pipeline |
+| `POST` | `/api/tt3d/generate` | SDXL preflight → shape → GLB |
 | `POST` | `/api/tt3d/test` | Quick render using global prompt |
 
 ### Media
@@ -159,63 +160,57 @@ Each generate endpoint also accepts its own `text` or `prompt` field directly.
 | `GET` | `/api/media/tt3d/latest` | Latest `output/tt3d_latest.glb` |
 | `GET` | `/api/media/tt3d/ref/latest` | Latest SDXL reference PNG |
 
-## TT3D (Hunyuan3D-2.1) setup
+## Package layout
 
-TT3D is optional and heavier than TTI/TTS. It chains SDXL with Tencent's Hunyuan3D-2.1 shape and PBR paint stages to produce a textured GLB from a text prompt.
+```
+src/comms_platform/
+├── main.py                 # gateway entry (uvicorn)
+├── config.py               # host/port and runtime flags
+├── constants.py            # model defaults
+├── services/
+│   └── inference_service.py   # gateway facade over workers
+├── scheduler/
+│   └── gpu_scheduler.py       # serializes TTI + TT3D GPU jobs
+├── workers/
+│   ├── pool.py                # subprocess pool
+│   ├── tts_worker.py          # TTS process entry
+│   ├── tti_worker.py          # TTI process entry
+│   └── tt3d_worker.py         # TT3D process entry
+├── inference/              # engine implementations (tts, tti, tt3d)
+└── web/                    # FastAPI routes and schemas
+```
 
-### Hardware
+## Dependencies (`uv`)
 
-| Stage | VRAM (approx.) |
-|-------|----------------|
-| SDXL preflight (TTI) | 8–12 GB |
-| Shape generation | 10 GB |
-| PBR texture synthesis | 21 GB |
-| Full pipeline | ~29 GB |
+Single source of truth: **`pyproject.toml`** + **`uv.lock`**. There is no separate `requirements.txt`.
 
-Use `TT3D_LOW_VRAM=true` (default) to unload each stage before loading the next. By default all three engines can stay loaded at once (`TT3D_EXCLUSIVE_GPU=false`). Set `TT3D_EXCLUSIVE_GPU=true` if you need TTI and TT3D to take turns on the GPU.
+```sh
+uv sync --extra gpu --extra tt3d   # full install (TTS + TTI + TT3D)
+uv sync --extra gpu                # TTS + TTI only
+```
 
-### TT3D environment variables
+| Extra | Packages |
+|-------|----------|
+| `gpu` | xFormers 0.0.29.post2, triton-windows |
+| `tt3d` | Hunyuan shape deps (trimesh, rembg, einops, torchdiffeq, …) |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HUNYUAN3D_ROOT` | `vendor/Hunyuan3D-2.1` | Path to the cloned Hunyuan3D repo |
-| `TT3D_MODEL_ID` | `tencent/Hunyuan3D-2.1` | Hugging Face model ID |
-| `TT3D_SHAPE_SUBFOLDER` | `hunyuan3d-dit-v2-1` | Shape model subfolder |
-| `TT3D_DEFAULT_GUIDANCE` | `7.5` | Classifier-free guidance for shape |
-| `TT3D_DEFAULT_STEPS` | `30` | Diffusion steps for shape |
-| `TT3D_DEFAULT_OCTREE_RESOLUTION` | `256` | Mesh detail level |
-| `TT3D_ENABLE_TEXTURE` | `true` | Run PBR paint stage (disable for shape-only) |
-| `TT3D_LOW_VRAM` | `true` | Unload pipelines between stages |
-| `TT3D_USE_INTERNAL_TTI` | `true` | Generate reference image via SDXL before shape |
-| `TT3D_EXCLUSIVE_GPU` | `false` | When `true`, loading TTI unloads TT3D and vice versa |
-| `TT3D_TEST_PROMPT` | wooden chair prompt | Default prompt before global prompt is set |
+PyTorch CUDA 12.4 wheels resolve via the `pytorch-cu124` index in `[tool.uv.sources]`. Resolution is limited to Windows + Python 3.12 via `[tool.uv].environments`.
 
-### TT3D generation flow
+## TT3D shape-only flow
 
 ```mermaid
 flowchart LR
-    Prompt["Text prompt"] --> TTI["SDXL TTI\n(reference PNG)"]
+    Prompt["Text prompt"] --> TTI["TTI worker\n(SDXL reference PNG)"]
     TTI --> RemBG["Background removal"]
-    RemBG --> Shape["Hunyuan3D shape\n(DiT flow matching)"]
-    Shape --> Paint["Hunyuan3D paint\n(PBR textures)"]
-    Paint --> GLB["output/tt3d_latest.glb"]
+    RemBG --> Shape["TT3D worker\n(Hunyuan shape DiT)"]
+    Shape --> GLB["output/tt3d_latest.glb"]
 ```
 
-Outputs are written to `output/`:
+Outputs under `output/`:
 
-- `tt3d_latest.glb` — latest textured (or shape-only) model
-- `tt3d_ref_latest.png` — SDXL reference image used for conditioning
-
-### Expected warnings on Windows
-
-| Message | Severity | Meaning / fix |
-|---------|----------|----------------|
-| `No module named 'triton'` (from xformers) | Fixable | Install **`triton-windows`** (included in `run_platform.bat` and `pyproject.toml`). Use version `<3.3` with PyTorch 2.6. |
-| `No module named 'bpy'` | Python version gap | **`bpy` cannot be pip-installed on Python 3.12.** This project uses 3.12 for CUDA PyTorch wheels. |
-| `Bpy IO CAN NOT BE Imported` | Usually harmless | Upstream optional import; patched automatically so the PBR paint pipeline can load without bpy. |
-| `custom_rasterizer has no attribute 'rasterize'` | **Must fix for textured output** | Run `.\scripts\setup_hunyuan3d.ps1` with Visual Studio Build Tools and CUDA 12.4. Until then TT3D can still export shape-only GLB. |
-
-To hide texture attempts entirely: `TT3D_ENABLE_TEXTURE=false`
+- `tt3d_latest.glb` — latest shape mesh
+- `tt3d_ref_latest.png` — SDXL reference used for conditioning
+- `tti_latest.png`, `tts_latest.wav` — latest TTI/TTS artifacts
 
 ## Tests
 
@@ -223,6 +218,8 @@ To hide texture attempts entirely: `TT3D_ENABLE_TEXTURE=false`
 uv run pytest -q tests/test_api_health.py tests/test_api_inference.py tests/test_inference_prompts.py
 ```
 
+Tests use `INFERENCE_IN_PROCESS=true` (via `TestConfig`) so no worker subprocesses are spawned.
+
 ## License
 
-Licensed under the [MIT License](./LICENSE).
+[MIT License](./LICENSE)

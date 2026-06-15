@@ -37,7 +37,6 @@ class Tt3dGeneratePayload(BaseModel):
         le=75,
     )
     seed: int | None = Field(default=None, ge=0, le=4294967295)
-    enable_texture: bool | None = None
     octree_resolution: int = Field(
         default=int(os.getenv("TT3D_DEFAULT_OCTREE_RESOLUTION", "256")),
         ge=128,

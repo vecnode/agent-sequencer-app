@@ -11,6 +11,7 @@ from comms_platform.web.app import create_app
 
 class TestConfig(Config):
     ENGINES_PRELOAD_ON_STARTUP = False
+    INFERENCE_IN_PROCESS = True
 
 
 def build_client() -> TestClient:

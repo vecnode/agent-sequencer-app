@@ -1,27 +1,32 @@
 import asyncio
 
 from ..context import AppContext
-from ...inference.tti import get_tti_engine_loaded_state
-from ...inference.tt3d import get_tt3d_engine_loaded_state
-from ...inference.tts import get_tts_engine_loaded_state
 
 
 def register_core_routes(app, ctx: AppContext) -> None:
+    service = ctx.inference_service
+    assert service is not None
+
     @app.get("/health")
     async def health():
         return {"status": "ok", "service": "inference-api"}
 
     @app.get("/api/status")
     async def api_status():
-        loop = asyncio.get_running_loop()
         tts_state, tti_state, tt3d_state = await asyncio.gather(
-            loop.run_in_executor(None, get_tts_engine_loaded_state),
-            loop.run_in_executor(None, get_tti_engine_loaded_state),
-            loop.run_in_executor(None, get_tt3d_engine_loaded_state),
+            service.tts_loaded_state(),
+            service.tti_status(),
+            service.tt3d_status(),
         )
+        scheduler = service.scheduler
         return {
             "status": "running",
             "service": "inference-api",
+            "architecture": "in-process" if service.in_process else "worker-processes",
+            "gpu_scheduler": {
+                "pending_jobs": scheduler.pending_gpu_jobs if scheduler else 0,
+                "serializes": ["tti", "tt3d"],
+            },
             "engines": {
                 "tts": {
                     "loaded": bool(tts_state.get("loaded")),
@@ -34,6 +39,7 @@ def register_core_routes(app, ctx: AppContext) -> None:
                 "tt3d": {
                     "loaded": bool(tt3d_state.get("loaded")),
                     "engine": tt3d_state.get("engine", "Hunyuan3D 2.1"),
+                    "mode": tt3d_state.get("mode", "shape-only"),
                 },
             },
         }

@@ -126,12 +126,6 @@ def set_tti_engine_loaded(loaded: bool) -> dict:
     with _tti_engine_lock:
         if loaded:
             try:
-                from .tt3d import unload_tt3d_engine_if_exclusive
-
-                unload_tt3d_engine_if_exclusive()
-            except ImportError:
-                pass
-            try:
                 get_tti_pipeline()
                 _, device, _, _ = get_tti_runtime()
                 return {
