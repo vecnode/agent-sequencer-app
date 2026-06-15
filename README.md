@@ -1,6 +1,6 @@
 # ai-comms-platform
 
-Headless inference API for multimodal generation on Windows.
+Headless **REST inference API** for multimodal generation on Windows. Any client — scripts, game engines, creative tools, mobile apps, or automation pipelines — can connect over HTTP; no bundled UI or host-specific integrations required.
 
 - **TTS** — SuperTonic 3
 - **TTI** — SDXL-Base-1
@@ -12,7 +12,7 @@ Stack: FastAPI, Diffusers, xFormers, Triton (Windows), PyTorch CUDA.
 
 ```mermaid
 flowchart LR
-    Client["API Clients\n(scripts, apps, CI)"]
+    Client["HTTP Clients\n(any app or script)"]
     Launcher["run_platform.bat"]
     Main["main.py"]
     App["create_app\n(FastAPI + uvicorn)"]
@@ -36,14 +36,16 @@ flowchart LR
     TT3D --> Output
 ```
 
+The server exposes a stable HTTP surface. Clients poll status, trigger generation, and fetch artifacts from `/api/media/*` — integration is entirely up to the consumer.
+
 ## Package layout
 
 ```
 src/comms_platform/
 ├── main.py              # entry point
-├── config.py            # host/port and TTS defaults
+├── config.py            # host/port and startup options
 ├── constants.py         # model defaults and output paths
-├── inference/           # TTS, TTI, and TT3D engines
+├── inference/           # TTS, TTI, TT3D engines + startup preload
 ├── utils/
 └── web/
     ├── app.py           # FastAPI factory and lifespan
@@ -51,12 +53,11 @@ src/comms_platform/
     └── schemas.py       # request payloads
 ```
 
-## Reproduce on Windows
+## Quick start (Windows)
 
-Requires Python 3.12 on Windows for the CUDA PyTorch wheel set used by SDXL.
+Requires Python 3.12 for the CUDA PyTorch wheels used by SDXL.
 
 ```sh
-# First time
 uv venv
 uv pip install -r requirements.txt
 uv pip install -e .
@@ -64,33 +65,46 @@ uv pip install -e .
 .\run_platform.bat
 ```
 
-`run_platform.bat` installs CUDA PyTorch, xFormers, triton-windows, applies Hunyuan3D vendor patches, and starts the API server (no browser).
+Default base URL: `http://127.0.0.1:8000`
 
-One-time Hunyuan3D vendor clone:
+`run_platform.bat` installs CUDA PyTorch, xFormers, triton-windows, applies Hunyuan3D vendor patches, and starts the API. On startup it preloads **TTS**, **TTI**, and **TT3D** so all three pipelines are ready before the first request.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEB_HOST` | `127.0.0.1` | Bind address |
+| `WEB_PORT` | `8000` | Bind port |
+| `ENGINES_PRELOAD_ON_STARTUP` | `true` | Load all engines at startup |
+| `ENGINES_PRELOAD_ON_STARTUP=false` | — | Skip preload; use `/api/*/engine/on` instead |
+
+One-time Hunyuan3D vendor clone (required for TT3D):
 
 ```powershell
 .\scripts\setup_hunyuan3d.ps1
 ```
 
-## Global inference prompt
-
-Set the shared prompt used by TTS/TTI/TT3D test endpoints and clients that read the global state:
+## Example client flow
 
 ```sh
+# Health check
+curl http://127.0.0.1:8000/health
+
+# Set a shared prompt for test endpoints
 curl -X POST http://127.0.0.1:8000/api/inference/prompt \
   -H "Content-Type: application/json" \
   -d '{"prompt": "a neon cyberpunk city at night"}'
-```
 
-Read current state:
+# Generate an image (engine must be loaded)
+curl -X POST http://127.0.0.1:8000/api/tti/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "a neon cyberpunk city at night"}'
 
-```sh
-curl http://127.0.0.1:8000/api/inference/prompt
+# Fetch latest artifact
+curl -O http://127.0.0.1:8000/api/media/tti/latest
 ```
 
 Each generate endpoint also accepts its own `text` or `prompt` field directly.
 
-## API
+## API reference
 
 ### Core
 
@@ -158,13 +172,7 @@ TT3D is optional and heavier than TTI/TTS. It chains SDXL with Tencent's Hunyuan
 | PBR texture synthesis | 21 GB |
 | Full pipeline | ~29 GB |
 
-Use `TT3D_LOW_VRAM=true` (default) to unload each stage before loading the next. TTI and TT3D are mutually exclusive on the GPU by default (`TT3D_EXCLUSIVE_GPU=true`).
-
-### One-time vendor install
-
-```powershell
-.\scripts\setup_hunyuan3d.ps1
-```
+Use `TT3D_LOW_VRAM=true` (default) to unload each stage before loading the next. By default all three engines can stay loaded at once (`TT3D_EXCLUSIVE_GPU=false`). Set `TT3D_EXCLUSIVE_GPU=true` if you need TTI and TT3D to take turns on the GPU.
 
 ### TT3D environment variables
 
@@ -179,7 +187,7 @@ Use `TT3D_LOW_VRAM=true` (default) to unload each stage before loading the next.
 | `TT3D_ENABLE_TEXTURE` | `true` | Run PBR paint stage (disable for shape-only) |
 | `TT3D_LOW_VRAM` | `true` | Unload pipelines between stages |
 | `TT3D_USE_INTERNAL_TTI` | `true` | Generate reference image via SDXL before shape |
-| `TT3D_EXCLUSIVE_GPU` | `true` | Unload TTI when TT3D loads (and vice versa) |
+| `TT3D_EXCLUSIVE_GPU` | `false` | When `true`, loading TTI unloads TT3D and vice versa |
 | `TT3D_TEST_PROMPT` | wooden chair prompt | Default prompt before global prompt is set |
 
 ### TT3D generation flow

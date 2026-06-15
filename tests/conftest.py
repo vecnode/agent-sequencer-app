@@ -1,5 +1,9 @@
+import os
 import sys
 from pathlib import Path
+
+# Keep pytest fast: do not load GPU pipelines during API tests.
+os.environ.setdefault("ENGINES_PRELOAD_ON_STARTUP", "false")
 
 import pytest
 

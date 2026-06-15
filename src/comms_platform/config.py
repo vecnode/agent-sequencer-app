@@ -11,3 +11,5 @@ class Config:
 
     TTS_DEFAULT_LANG = os.getenv("TTS_DEFAULT_LANG", "en")
     TTS_DEFAULT_VOICE = os.getenv("TTS_DEFAULT_VOICE", "F1")
+
+    ENGINES_PRELOAD_ON_STARTUP = os.getenv("ENGINES_PRELOAD_ON_STARTUP", "true").lower() == "true"
