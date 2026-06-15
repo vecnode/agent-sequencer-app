@@ -6,7 +6,7 @@ def test_health_endpoint_returns_ok():
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "communications-platform"}
+    assert response.json() == {"status": "ok", "service": "inference-api"}
     body = response.json()
     log_test(
         "GET /health",
@@ -14,19 +14,20 @@ def test_health_endpoint_returns_ok():
     )
 
 
-def test_status_endpoint_reports_server_active():
+def test_status_endpoint_reports_engine_states():
     with build_client() as client:
         response = client.get("/api/status")
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "running"
-    assert "sse_clients" in body
-    assert "osc_input" in body
-    assert "osc_output" in body
+    assert body["service"] == "inference-api"
+    assert "engines" in body
+    assert "tts" in body["engines"]
+    assert "tti" in body["engines"]
+    assert "tt3d" in body["engines"]
     log_test(
         "GET /api/status",
-        "status_code="
-        f"{response.status_code}, status={body['status']}, clients={body['sse_clients']}, "
-        f"osc_in={body['osc_input']}, osc_out={body['osc_output']}",
+        f"status_code={response.status_code}, status={body['status']}, "
+        f"tts_loaded={body['engines']['tts']['loaded']}",
     )

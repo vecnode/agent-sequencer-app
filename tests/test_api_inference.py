@@ -191,7 +191,7 @@ def test_tti_test_endpoint_success():
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["prompt"] == "a beautiful sunny city with cars"
+    assert body["prompt"] == "hello world"
     assert body["image_id"] == "test-image"
     log_test(
         "POST /api/tti/test [success]",
@@ -329,6 +329,35 @@ def test_inference_prompt_endpoint_returns_state():
     log_test(
         "GET /api/inference/prompt",
         f"status_code={response.status_code}, prompt_len={len(body['prompt'])}",
+    )
+
+
+def test_inference_prompt_post_sets_global_prompt():
+    with build_client() as client:
+        response = client.post(
+            "/api/inference/prompt",
+            json={"prompt": "a neon cyberpunk city at night"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["prompt"] == "a neon cyberpunk city at night"
+    assert body["engines"] == ["tts", "tti", "tt3d"]
+    log_test(
+        "POST /api/inference/prompt",
+        f"status_code={response.status_code}, prompt={body['prompt']}",
+    )
+
+
+def test_inference_prompt_post_rejects_empty_prompt():
+    with build_client() as client:
+        response = client.post("/api/inference/prompt", json={"prompt": "   "})
+
+    assert response.status_code == 422 or response.status_code == 400
+    log_test(
+        "POST /api/inference/prompt [empty]",
+        f"status_code={response.status_code}",
     )
 
 

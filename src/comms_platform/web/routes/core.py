@@ -1,51 +1,39 @@
 import asyncio
-import json
 
-from fastapi.responses import HTMLResponse, StreamingResponse
-
-from ..constants import STATIC_DIR
 from ..context import AppContext
+from ...inference.tti import get_tti_engine_loaded_state
+from ...inference.tt3d import get_tt3d_engine_loaded_state
+from ...inference.tts import get_tts_engine_loaded_state
 
 
 def register_core_routes(app, ctx: AppContext) -> None:
-    @app.get("/", response_class=HTMLResponse)
-    async def index():
-        return HTMLResponse(content=(STATIC_DIR / "index.html").read_text(encoding="utf-8"))
-
     @app.get("/health")
     async def health():
-        return {"status": "ok", "service": "communications-platform"}
+        return {"status": "ok", "service": "inference-api"}
 
     @app.get("/api/status")
     async def api_status():
+        loop = asyncio.get_running_loop()
+        tts_state, tti_state, tt3d_state = await asyncio.gather(
+            loop.run_in_executor(None, get_tts_engine_loaded_state),
+            loop.run_in_executor(None, get_tti_engine_loaded_state),
+            loop.run_in_executor(None, get_tt3d_engine_loaded_state),
+        )
         return {
             "status": "running",
-            "sse_clients": ctx.event_bus.subscriber_count,
-            "osc_output": f"{ctx.signal_gateway.osc_output_host}:{ctx.signal_gateway.osc_output_port}",
-            "osc_input": f"{ctx.signal_gateway.osc_input_host}:{ctx.signal_gateway.osc_input_port}",
-            "agent_running": ctx.master_agent.is_running,
-            "agent_heartbeats": ctx.master_agent.heartbeat_count,
-        }
-
-    @app.get("/events")
-    async def sse_events():
-        async def stream():
-            q = ctx.event_bus.subscribe()
-            try:
-                while True:
-                    data = await q.get()
-                    yield f"data: {json.dumps(data)}\n\n"
-            except asyncio.CancelledError:
-                pass
-            finally:
-                ctx.event_bus.unsubscribe(q)
-
-        return StreamingResponse(
-            stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive",
+            "service": "inference-api",
+            "engines": {
+                "tts": {
+                    "loaded": bool(tts_state.get("loaded")),
+                    "engine": tts_state.get("engine", "SuperTonic 3"),
+                },
+                "tti": {
+                    "loaded": bool(tti_state.get("loaded")),
+                    "engine": tti_state.get("engine", "SDXL Base 1"),
+                },
+                "tt3d": {
+                    "loaded": bool(tt3d_state.get("loaded")),
+                    "engine": tt3d_state.get("engine", "Hunyuan3D 2.1"),
+                },
             },
-        )
+        }

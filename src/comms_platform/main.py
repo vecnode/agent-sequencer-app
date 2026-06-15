@@ -2,17 +2,11 @@
 Copyright (c) vecnode 2026
 """
 
-# Entry point for the communications platform
-
 import asyncio
 
 import uvicorn
 
-from .agent import MasterAgent
 from .config import Config
-from .transport.event_bus import EventBus
-from .transport.td_sender import TouchDesignerSender
-from .transport.thread_manager import ThreadManager
 from .web.app import create_app
 from .utils.logger import get_logger
 
@@ -21,14 +15,9 @@ logger = get_logger("main")
 
 async def main():
     config = Config()
-    event_bus = EventBus()
-    thread_manager = ThreadManager()
-    td_sender = TouchDesignerSender(config, thread_manager, event_bus)
-    master_agent = MasterAgent(config=config)
+    app = create_app(config)
 
-    app = create_app(event_bus, thread_manager, td_sender, master_agent, config)
-
-    logger.info(f"Starting Communications Platform -> http://{config.WEB_HOST}:{config.WEB_PORT}")
+    logger.info(f"Starting Inference API -> http://{config.WEB_HOST}:{config.WEB_PORT}")
 
     server_config = uvicorn.Config(
         app,

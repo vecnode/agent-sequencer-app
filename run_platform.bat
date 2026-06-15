@@ -28,11 +28,7 @@ if not defined web_port set "web_port=8000"
 
 
 
-set "browser_host=%web_host%"
-
-if /i "%browser_host%"=="0.0.0.0" set "browser_host=127.0.0.1"
-
-set "platform_url=http://%browser_host%:%web_port%"
+set "platform_url=http://%web_host%:%web_port%"
 
 
 
@@ -74,31 +70,11 @@ set HF_HUB_DISABLE_XET=1
 
 
 
-set "chrome_exe="
-
-if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
-
-if not defined chrome_exe if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "chrome_exe=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
-
-if not defined chrome_exe for %%I in (chrome.exe) do set "chrome_exe=%%~$PATH:I"
-
-
-
 rem Use the venv interpreter directly so uv does not re-sync packages on startup.
 
-start "Comms Platform" cmd /k "cd /d ""%~dp0"" && set HF_HUB_DISABLE_XET=1 && .venv\Scripts\python.exe -m comms_platform.main"
+start "Inference API" cmd /k "cd /d ""%~dp0"" && set HF_HUB_DISABLE_XET=1 && .venv\Scripts\python.exe -m comms_platform.main"
 
-
-
-if defined chrome_exe (
-
-	start "" "%chrome_exe%" "%platform_url%"
-
-) else (
-
-	start "" "%platform_url%"
-
-)
+echo [startup] Inference API running at %platform_url%
 
 
 

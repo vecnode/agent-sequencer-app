@@ -14,7 +14,11 @@ from ...constants import (
     TT3D_DEFAULT_OCTREE_RESOLUTION,
     TT3D_DEFAULT_STEPS,
 )
-from ...inference.prompts import get_global_inference_prompt, get_inference_prompt_state
+from ...inference.prompts import (
+    get_global_inference_prompt,
+    get_inference_prompt_state,
+    set_global_inference_prompt,
+)
 from ...inference.tti import generate_tti_image, get_tti_engine_loaded_state, set_tti_engine_loaded
 from ...inference.tt3d import generate_tt3d_asset, get_tt3d_engine_loaded_state, set_tt3d_engine_loaded
 from ...inference.tts import (
@@ -25,7 +29,7 @@ from ...inference.tts import (
 )
 from ...utils.logger import get_logger
 from ..context import AppContext
-from ..schemas import Tt3dGeneratePayload, TtiGeneratePayload, TtsPayload
+from ..schemas import InferencePromptPayload, Tt3dGeneratePayload, TtiGeneratePayload, TtsPayload
 
 logger = get_logger("web.routes.inference")
 
@@ -34,6 +38,21 @@ def register_inference_routes(app, ctx: AppContext) -> None:
     @app.get("/api/inference/prompt")
     async def inference_prompt_get():
         return {"ok": True, **get_inference_prompt_state()}
+
+    @app.post("/api/inference/prompt")
+    async def inference_prompt_set(payload: InferencePromptPayload):
+        try:
+            prompt = set_global_inference_prompt(payload.prompt)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "prompt_required"},
+            )
+        return {
+            "ok": True,
+            "prompt": prompt,
+            "engines": ["tts", "tti", "tt3d"],
+        }
 
     @app.post("/api/tts/synthesize")
     async def synthesize_tts(payload: TtsPayload):
